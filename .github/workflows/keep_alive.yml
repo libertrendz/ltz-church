@@ -1,0 +1,17 @@
+name: Supabase Keep Alive
+
+on:
+  schedule:
+    # Executa às 00:00 de cada 3 dias
+    - cron: '0 0 */3 * *'
+  workflow_dispatch: # Permite que teste manualmente se desejar
+
+jobs:
+  ping_supabase:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Database via Edge Function ou REST API
+        run: |
+          curl -X GET "https://dpsqiodxchdymxuhpbpx.supabase.co" \
+          -H "apikey: ${{ sb_secret_HM2ZbGPpWF1iypMtRJEs5A_20mjPcap }}" \
+          -H "Authorization: Bearer ${{ sb_secret_HM2ZbGPpWF1iypMtRJEs5A_20mjPcap }}"
