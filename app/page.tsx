@@ -3,7 +3,18 @@ export default function HomePage() {
     <main style={{ padding: 24 }}>
       <h1>LTZ-CHURCH</h1>
       <p>Deploy OK.</p>
-      <p>Próximo: /health</p>
+
+      <ul>
+        <li>
+          <a href="/health">/health</a>
+        </li>
+        <li>
+          <a href="/login">/login</a>
+        </li>
+        <li>
+          <a href="/me">/me</a>
+        </li>
+      </ul>
     </main>
   );
 }
