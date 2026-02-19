@@ -21,7 +21,10 @@ export default function HomePage() {
           <a href="/departamentos">/departamentos</a>
         </li>
         <li>
-          <a href="/departamentos-associar">/departamentos-associar</a>
+          <a href="/membros/departamentos">/membros/departamentos</a>
+        </li>
+        <li>
+          <a href="/departamentos-associar">/departamentos-associar (técnico)</a>
         </li>
       </ul>
     </main>
