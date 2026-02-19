@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { supabaseBrowser } from "@/lib/supabase/client";
+import { supabaseBrowser } from "../../lib/supabase/client";
 
 type UsuarioRow = {
   id: string;
@@ -42,7 +42,6 @@ export default function MePage() {
 
       setEmail(session.user.email ?? null);
 
-      // Teste RLS: buscar a linha em public.usuarios do próprio user.
       const { data, error } = await supabase
         .from("usuarios")
         .select("id, igreja_id, email")
