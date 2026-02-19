@@ -14,6 +14,9 @@ export default function HomePage() {
         <li>
           <a href="/meus-dados">/meus-dados</a>
         </li>
+        <li>
+          <a href="/congregacoes">/congregacoes</a>
+        </li>
       </ul>
     </main>
   );
