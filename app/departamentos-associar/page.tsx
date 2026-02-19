@@ -24,7 +24,6 @@ export default function DepartamentosAssociarPage() {
   async function loadAll() {
     setBusy(true);
     setErr(null);
-    setOk(null);
 
     const { data: sessionData } = await supabase.auth.getSession();
     if (!sessionData.session) {
@@ -69,7 +68,11 @@ export default function DepartamentosAssociarPage() {
     setMembros((memRes.data as MembroRow[]) ?? []);
     setAssocs((assocRes.data as AssocRow[]) ?? []);
 
-    if (!depId && deps.length > 0) setDepId(deps[0].id);
+    // Se ainda não há seleção, escolhe o primeiro departamento ativo.
+    if (!depId) {
+      const firstActive = deps.find((d) => d.ativo);
+      if (firstActive) setDepId(firstActive.id);
+    }
 
     setBusy(false);
   }
@@ -86,38 +89,61 @@ export default function DepartamentosAssociarPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Sempre que muda o departamento selecionado, limpamos feedback para evitar confusão
+  useEffect(() => {
+    setOk(null);
+    setErr(null);
+  }, [depId]);
+
   function isInDep(membroId: string, departamentoId: string) {
     return assocs.some((a) => a.membro_id === membroId && a.departamento_id === departamentoId);
   }
 
-  async function toggle(membroId: string) {
-    if (!depId) return;
+  // Mapa: membro -> lista de departamentos onde está
+  const depNameById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const d of departamentos) m.set(d.id, d.nome);
+    return m;
+  }, [departamentos]);
+
+  const depsByMembro = useMemo(() => {
+    const m = new Map<string, string[]>();
+    for (const a of assocs) {
+      const list = m.get(a.membro_id) ?? [];
+      list.push(a.departamento_id);
+      m.set(a.membro_id, list);
+    }
+    return m;
+  }, [assocs]);
+
+  async function toggle(membroId: string, selectedDepId: string) {
+    if (!selectedDepId) return;
 
     setErr(null);
     setOk(null);
 
-    const already = isInDep(membroId, depId);
+    const already = isInDep(membroId, selectedDepId);
 
     if (already) {
       const { error } = await supabase.rpc("remove_membro_from_departamento", {
         p_membro_id: membroId,
-        p_departamento_id: depId
+        p_departamento_id: selectedDepId
       });
       if (error) {
         setErr(error.message);
         return;
       }
-      setOk("Removido.");
+      setOk(`Removido do departamento: ${depNameById.get(selectedDepId) ?? "—"}`);
     } else {
       const { error } = await supabase.rpc("add_membro_to_departamento", {
         p_membro_id: membroId,
-        p_departamento_id: depId
+        p_departamento_id: selectedDepId
       });
       if (error) {
         setErr(error.message);
         return;
       }
-      setOk("Adicionado.");
+      setOk(`Adicionado ao departamento: ${depNameById.get(selectedDepId) ?? "—"}`);
     }
 
     await loadAll();
@@ -135,7 +161,8 @@ export default function DepartamentosAssociarPage() {
       <h1 style={{ marginTop: 0 }}>Associação Membros ↔ Departamentos</h1>
 
       <p style={{ opacity: 0.8, marginTop: 6 }}>
-        Seleciona um departamento e adiciona/remove membros. (Fase 1)
+        O botão Adicionar/Remover refere-se sempre ao departamento actualmente seleccionado.
+        Agora também mostramos “Em departamentos:” para acabar com ambiguidades.
       </p>
 
       {busy ? <p>A carregar…</p> : null}
@@ -194,6 +221,11 @@ export default function DepartamentosAssociarPage() {
           <div style={{ marginTop: 14, display: "grid", gap: 10 }}>
             {membros.map((m) => {
               const inside = depId ? isInDep(m.id, depId) : false;
+              const memberDeps = depsByMembro.get(m.id) ?? [];
+              const memberDepNames = memberDeps
+                .map((id) => depNameById.get(id))
+                .filter(Boolean) as string[];
+
               return (
                 <div
                   key={m.id}
@@ -213,10 +245,14 @@ export default function DepartamentosAssociarPage() {
                     <div style={{ opacity: 0.8, marginTop: 4 }}>
                       {m.voluntario ? "Voluntário" : "—"} | {m.obreiro ? "Obreiro" : "—"}
                     </div>
+                    <div style={{ opacity: 0.85, marginTop: 6 }}>
+                      <strong>Em departamentos:</strong>{" "}
+                      {memberDepNames.length > 0 ? memberDepNames.join(", ") : "—"}
+                    </div>
                   </div>
 
                   <button
-                    onClick={() => toggle(m.id)}
+                    onClick={() => toggle(m.id, depId)}
                     style={{
                       padding: "10px 14px",
                       borderRadius: 12,
