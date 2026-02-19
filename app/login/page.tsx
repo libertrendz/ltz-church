@@ -21,7 +21,7 @@ export default function LoginPage() {
         setMsg(error.message);
         return;
       }
-      if (data.session) router.replace("/me");
+      if (data.session) router.replace("/meus-dados");
     });
 
     return () => {
@@ -46,7 +46,7 @@ export default function LoginPage() {
       return;
     }
 
-    router.replace("/me");
+    router.replace("/meus-dados");
   }
 
   return (
@@ -109,10 +109,6 @@ export default function LoginPage() {
           <p style={{ color: "#ff6b6b", margin: 0, whiteSpace: "pre-wrap" }}>{msg}</p>
         ) : null}
       </form>
-
-      <p style={{ marginTop: 16, opacity: 0.8 }}>
-        Depois do login vais para <code>/me</code>.
-      </p>
     </main>
   );
 }
