@@ -17,6 +17,9 @@ export default function HomePage() {
         <li>
           <a href="/congregacoes">/congregacoes</a>
         </li>
+        <li>
+          <a href="/departamentos">/departamentos</a>
+        </li>
       </ul>
     </main>
   );
