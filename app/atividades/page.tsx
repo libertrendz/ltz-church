@@ -7,6 +7,9 @@ import { supabaseBrowser } from "../../lib/supabase/client";
 type AtividadeRow = {
   id: string;
   nome: string;
+  descricao: string | null;
+  recorrente: boolean;
+  ativo: boolean;
   created_at: string;
 };
 
@@ -20,7 +23,10 @@ export default function AtividadesPage() {
   const [ok, setOk] = useState<string | null>(null);
 
   const [items, setItems] = useState<AtividadeRow[]>([]);
+
   const [nome, setNome] = useState("");
+  const [descricao, setDescricao] = useState("");
+  const [recorrente, setRecorrente] = useState(true);
 
   async function load() {
     setBusy(true);
@@ -35,7 +41,7 @@ export default function AtividadesPage() {
 
     const { data, error } = await supabase
       .from("atividades")
-      .select("id, nome, created_at")
+      .select("id, nome, descricao, recorrente, ativo, created_at")
       .order("created_at", { ascending: true });
 
     if (error) {
@@ -72,7 +78,12 @@ export default function AtividadesPage() {
       return;
     }
 
-    const { data, error } = await supabase.rpc("create_atividade", { p_nome: n });
+    const { data, error } = await supabase.rpc("create_atividade", {
+      p_nome: n,
+      p_descricao: descricao.trim() ? descricao.trim() : null,
+      p_recorrente: recorrente,
+      p_ativo: true
+    });
 
     setSaving(false);
 
@@ -82,7 +93,27 @@ export default function AtividadesPage() {
     }
 
     setNome("");
+    setDescricao("");
+    setRecorrente(true);
     setOk(`Criada (id: ${data}).`);
+    await load();
+  }
+
+  async function toggleAtivo(a: AtividadeRow) {
+    setErr(null);
+    setOk(null);
+
+    const { error } = await supabase.rpc("set_atividade_ativo", {
+      p_atividade_id: a.id,
+      p_ativo: !a.ativo
+    });
+
+    if (error) {
+      setErr(error.message);
+      return;
+    }
+
+    setOk(!a.ativo ? "Atividade ativada." : "Atividade inativada.");
     await load();
   }
 
@@ -96,7 +127,7 @@ export default function AtividadesPage() {
       <h1 style={{ marginTop: 0 }}>Atividades</h1>
 
       <p style={{ opacity: 0.8, marginTop: 6 }}>
-        Gestão básica de atividades (Fase 1). Associadas automaticamente à igreja (tenant).
+        Atividade = tipo (ex: Culto, Ensaio, Reunião). As instâncias (dia/hora) vêm na Agenda/Escala.
       </p>
 
       <div
@@ -109,15 +140,15 @@ export default function AtividadesPage() {
           color: "#fff"
         }}
       >
-        <h2 style={{ marginTop: 0, fontSize: 18 }}>Nova atividade</h2>
+        <h2 style={{ marginTop: 0, fontSize: 18 }}>Nova atividade (tipo)</h2>
 
-        <div style={{ display: "grid", gap: 12, maxWidth: 520 }}>
+        <div style={{ display: "grid", gap: 12, maxWidth: 560 }}>
           <label style={{ display: "grid", gap: 6 }}>
             <span>Nome</span>
             <input
               value={nome}
               onChange={(e) => setNome(e.target.value)}
-              placeholder="Ex: Culto Domingo Manhã"
+              placeholder="Ex: Culto"
               style={{
                 padding: 10,
                 borderRadius: 10,
@@ -126,6 +157,31 @@ export default function AtividadesPage() {
                 color: "#fff"
               }}
             />
+          </label>
+
+          <label style={{ display: "grid", gap: 6 }}>
+            <span>Descrição (opcional)</span>
+            <input
+              value={descricao}
+              onChange={(e) => setDescricao(e.target.value)}
+              placeholder="Ex: Culto principal de domingo"
+              style={{
+                padding: 10,
+                borderRadius: 10,
+                border: "1px solid #333",
+                background: "#111",
+                color: "#fff"
+              }}
+            />
+          </label>
+
+          <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <input
+              type="checkbox"
+              checked={recorrente}
+              onChange={(e) => setRecorrente(e.target.checked)}
+            />
+            <span>Recorrente</span>
           </label>
 
           <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
@@ -185,7 +241,31 @@ export default function AtividadesPage() {
                   color: "#fff"
                 }}
               >
-                <div style={{ fontWeight: 700 }}>{a.nome}</div>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                  <div>
+                    <div style={{ fontWeight: 800 }}>
+                      {a.nome} {!a.ativo ? <span style={{ opacity: 0.75 }}>(inativa)</span> : null}
+                    </div>
+                    <div style={{ opacity: 0.8, marginTop: 4 }}>
+                      {a.descricao ?? "—"} | {a.recorrente ? "Recorrente" : "Não recorrente"}
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => toggleAtivo(a)}
+                    style={{
+                      padding: "10px 14px",
+                      borderRadius: 12,
+                      border: "1px solid #444",
+                      background: a.ativo ? "#2a0f0f" : "#0f2a12",
+                      color: "#fff",
+                      cursor: "pointer",
+                      minWidth: 140
+                    }}
+                  >
+                    {a.ativo ? "Inativar" : "Ativar"}
+                  </button>
+                </div>
               </div>
             ))}
           </div>
