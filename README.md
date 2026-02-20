@@ -1,4 +1,3 @@
-
 # LTZ-CHURCH
 
 Sistema multi-tenant para gestão organizacional de igrejas.
