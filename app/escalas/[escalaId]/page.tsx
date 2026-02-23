@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabaseBrowser } from "../../../lib/supabase/client";
 
-type FuncaoRow = { id: string; nome: string; ativa: boolean };
+type FuncaoRow = { id: string; nome: string };
 type MembroRow = { id: string; nome: string; ativo: boolean };
 
 type EscalaRow = {
@@ -118,7 +118,8 @@ export default function EscalaDetailPage() {
       setEvento(null);
     }
 
-    const fRes = await supabase.from("funcoes").select("id, nome, ativa").order("nome", { ascending: true });
+    // Funções: não assumir coluna ativa/ativo — só id/nome
+    const fRes = await supabase.from("funcoes").select("id, nome").order("nome", { ascending: true });
     if (fRes.error) {
       setErr(fRes.error.message);
       setBusy(false);
@@ -126,6 +127,7 @@ export default function EscalaDetailPage() {
     }
     setFuncoes((fRes.data as FuncaoRow[]) ?? []);
 
+    // Membros: aqui já sabemos que existe "ativo"
     const mRes = await supabase.from("membros").select("id, nome, ativo").order("nome", { ascending: true });
     if (mRes.error) {
       setErr(mRes.error.message);
@@ -232,7 +234,6 @@ export default function EscalaDetailPage() {
     router.replace("/login");
   }
 
-  const funcoesAtivas = funcoes.filter((f) => f.ativa);
   const membrosAtivos = membros.filter((m) => m.ativo);
 
   return (
@@ -288,7 +289,7 @@ export default function EscalaDetailPage() {
                   style={{ padding: 10, borderRadius: 10, border: "1px solid #333", background: "#111", color: "#fff" }}
                 >
                   <option value="">—</option>
-                  {funcoesAtivas.map((f) => (
+                  {funcoes.map((f) => (
                     <option key={f.id} value={f.id}>
                       {f.nome}
                     </option>
