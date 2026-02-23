@@ -218,11 +218,11 @@ export default function AgendaEventosPage() {
   }, [congregacoes]);
 
   return (
-    <main style={{ padding: 24, maxWidth: 1000 }}>
+    <main style={{ padding: 24, maxWidth: 1000, color: "#fff" }}>
       <h1 style={{ marginTop: 0 }}>Agenda — Eventos</h1>
 
       <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginTop: 12 }}>
-        <a href="/agenda/series" style={{ color: "#fff", opacity: 0.9 }}>
+        <a href="/agenda/series" style={{ color: "#fff", opacity: 0.9, textDecoration: "underline" }}>
           Gerir séries
         </a>
 
@@ -246,11 +246,20 @@ export default function AgendaEventosPage() {
       {busy ? <p style={{ marginTop: 14 }}>A carregar…</p> : null}
       {err ? <p style={{ marginTop: 14, color: "#ff6b6b", whiteSpace: "pre-wrap" }}>{err}</p> : null}
 
-      <div style={{ marginTop: 16, padding: 16, borderRadius: 16, border: "1px solid #333", background: "#0b0b0b" }}>
-        <h2 style={{ marginTop: 0, fontSize: 18 }}>Criar evento avulso</h2>
+      <div
+        style={{
+          marginTop: 16,
+          padding: 16,
+          borderRadius: 16,
+          border: "1px solid #333",
+          background: "#0b0b0b",
+          color: "#fff"
+        }}
+      >
+        <h2 style={{ marginTop: 0, fontSize: 18, color: "#fff" }}>Criar evento avulso</h2>
 
-        <div style={{ display: "grid", gap: 12, maxWidth: 720 }}>
-          <label style={{ display: "grid", gap: 6 }}>
+        <div style={{ display: "grid", gap: 12, maxWidth: 720, color: "#fff" }}>
+          <label style={{ display: "grid", gap: 6, color: "#fff" }}>
             <span>Atividade (tipo)</span>
             <select
               value={atividadeId}
@@ -266,7 +275,7 @@ export default function AgendaEventosPage() {
             </select>
           </label>
 
-          <label style={{ display: "grid", gap: 6 }}>
+          <label style={{ display: "grid", gap: 6, color: "#fff" }}>
             <span>Congregação (opcional)</span>
             <select
               value={congregacaoId}
@@ -283,7 +292,7 @@ export default function AgendaEventosPage() {
           </label>
 
           <div style={{ display: "grid", gap: 12, gridTemplateColumns: "1fr 1fr" }}>
-            <label style={{ display: "grid", gap: 6 }}>
+            <label style={{ display: "grid", gap: 6, color: "#fff" }}>
               <span>Início (Lisboa)</span>
               <input
                 type="datetime-local"
@@ -293,7 +302,7 @@ export default function AgendaEventosPage() {
               />
             </label>
 
-            <label style={{ display: "grid", gap: 6 }}>
+            <label style={{ display: "grid", gap: 6, color: "#fff" }}>
               <span>Fim (opcional)</span>
               <input
                 type="datetime-local"
@@ -304,7 +313,7 @@ export default function AgendaEventosPage() {
             </label>
           </div>
 
-          <label style={{ display: "grid", gap: 6 }}>
+          <label style={{ display: "grid", gap: 6, color: "#fff" }}>
             <span>Título (opcional)</span>
             <input
               value={titulo}
@@ -313,7 +322,7 @@ export default function AgendaEventosPage() {
             />
           </label>
 
-          <label style={{ display: "grid", gap: 6 }}>
+          <label style={{ display: "grid", gap: 6, color: "#fff" }}>
             <span>Tema (opcional)</span>
             <input
               value={tema}
@@ -322,7 +331,7 @@ export default function AgendaEventosPage() {
             />
           </label>
 
-          <label style={{ display: "grid", gap: 6 }}>
+          <label style={{ display: "grid", gap: 6, color: "#fff" }}>
             <span>Descrição (opcional)</span>
             <input
               value={descricao}
@@ -331,7 +340,7 @@ export default function AgendaEventosPage() {
             />
           </label>
 
-          <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <label style={{ display: "flex", gap: 8, alignItems: "center", color: "#fff" }}>
             <input type="checkbox" checked={publico} onChange={(e) => setPublico(e.target.checked)} />
             <span>Evento público</span>
           </label>
@@ -354,8 +363,8 @@ export default function AgendaEventosPage() {
         </div>
       </div>
 
-      <div style={{ marginTop: 16 }}>
-        <h2 style={{ fontSize: 18 }}>Próximos eventos</h2>
+      <div style={{ marginTop: 16, color: "#fff" }}>
+        <h2 style={{ fontSize: 18, color: "#fff" }}>Próximos eventos</h2>
 
         {!busy && items.length === 0 ? <p>Sem eventos.</p> : null}
 
@@ -384,14 +393,14 @@ export default function AgendaEventosPage() {
                 >
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
                     <div>
-                      <div style={{ fontWeight: 900 }}>
+                      <div style={{ fontWeight: 900, color: "#fff" }}>
                         {label} {ev.status === "cancelado" ? <span style={{ opacity: 0.8 }}>(cancelado)</span> : null}
                       </div>
-                      <div style={{ opacity: 0.85, marginTop: 4 }}>
+                      <div style={{ opacity: 0.85, marginTop: 4, color: "#fff" }}>
                         {fmtDateTimeLisbon(ev.starts_at)}
                         {ev.ends_at ? ` → ${fmtDateTimeLisbon(ev.ends_at)}` : ""} · Congregação: {cName}
                       </div>
-                      {ev.tema ? <div style={{ opacity: 0.85, marginTop: 4 }}>Tema: {ev.tema}</div> : null}
+                      {ev.tema ? <div style={{ opacity: 0.85, marginTop: 4, color: "#fff" }}>Tema: {ev.tema}</div> : null}
                     </div>
 
                     <button
