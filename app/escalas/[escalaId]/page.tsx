@@ -42,7 +42,8 @@ type ItemRow = {
   funcao_id: string;
   estado: string | null;
   notas: string | null;
-  membros?: { id: string; nome: string | null; email: string | null } | null;
+  // Supabase pode devolver join como array
+  membros?: { id: string; nome: string | null; email: string | null }[] | null;
 };
 
 function fmtLisbon(iso: string | null) {
@@ -177,7 +178,7 @@ export default function EscalaDetalhePage() {
       return;
     }
 
-    const items = (itRes.data as ItemRow[]) ?? [];
+    const items = ((itRes.data as unknown) as ItemRow[]) ?? [];
     const mapItems = new Map<string, ItemRow>();
     for (const it of items) {
       if (it.escala_slot_id) mapItems.set(it.escala_slot_id, it);
@@ -343,9 +344,8 @@ export default function EscalaDetalhePage() {
                     const isFilled = (s.status ?? "").toLowerCase() === "fechado";
                     const disabled = !!savingSlot[s.id];
 
-                    const label = item?.membros
-                      ? safeMemberLabel({ id: item.membros.id, nome: item.membros.nome, email: item.membros.email })
-                      : null;
+                    const joined = item?.membros && item.membros.length > 0 ? item.membros[0] : null;
+                    const label = joined ? safeMemberLabel({ id: joined.id, nome: joined.nome, email: joined.email }) : null;
 
                     return (
                       <div
