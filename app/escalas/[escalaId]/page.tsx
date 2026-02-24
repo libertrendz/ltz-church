@@ -5,21 +5,9 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabaseBrowser } from "../../../lib/supabase/client";
 
-type EscalaRow = {
-  id: string;
-  evento_id: string | null;
-};
-
-type EventoRow = {
-  id: string;
-  starts_at: string | null;
-  titulo: string | null;
-};
-
-type FuncaoRow = {
-  id: string;
-  nome: string;
-};
+type EscalaRow = { id: string; evento_id: string | null };
+type EventoRow = { id: string; starts_at: string | null; titulo: string | null };
+type FuncaoRow = { id: string; nome: string };
 
 type SlotRow = {
   id: string;
@@ -32,7 +20,7 @@ type SlotRow = {
 type MembroRow = {
   id: string;
   nome: string | null;
-  email: string | null;
+  // não assumimos email aqui; pode não existir em membros
 };
 
 type ItemRow = {
@@ -42,8 +30,7 @@ type ItemRow = {
   funcao_id: string;
   estado: string | null;
   notas: string | null;
-  // Supabase pode devolver join como array
-  membros?: { id: string; nome: string | null; email: string | null }[] | null;
+  membros?: { id: string; nome: string | null }[] | null;
 };
 
 function fmtLisbon(iso: string | null) {
@@ -60,8 +47,8 @@ function fmtLisbon(iso: string | null) {
   }).format(d);
 }
 
-function safeMemberLabel(m: MembroRow) {
-  return (m.nome && m.nome.trim()) || (m.email && m.email.trim()) || m.id;
+function safeMemberLabel(m: { id: string; nome: string | null }) {
+  return (m.nome && m.nome.trim()) || m.id;
 }
 
 export default function EscalaDetalhePage() {
@@ -84,7 +71,6 @@ export default function EscalaDetalhePage() {
 
   const [membros, setMembros] = useState<MembroRow[]>([]);
 
-  // UI state per slot
   const [selectedMembro, setSelectedMembro] = useState<Record<string, string>>({});
   const [selectedEstado, setSelectedEstado] = useState<Record<string, string>>({});
   const [notas, setNotas] = useState<Record<string, string>>({});
@@ -107,7 +93,6 @@ export default function EscalaDetalhePage() {
     const okSession = await requireSessionOrRedirect();
     if (!okSession) return;
 
-    // Escala
     const esRes = await supabase.from("escalas").select("id, evento_id").eq("id", escalaId).single();
     if (esRes.error) {
       setErr(esRes.error.message);
@@ -116,7 +101,6 @@ export default function EscalaDetalhePage() {
     }
     setEscala(esRes.data as EscalaRow);
 
-    // Evento (header)
     if (esRes.data?.evento_id) {
       const evRes = await supabase
         .from("agenda_eventos")
@@ -134,7 +118,6 @@ export default function EscalaDetalhePage() {
       setEvento(null);
     }
 
-    // Slots
     const slRes = await supabase
       .from("escala_slots")
       .select("id, escala_id, funcao_id, slot_index, status")
@@ -150,7 +133,6 @@ export default function EscalaDetalhePage() {
     const slotsData = (slRes.data as SlotRow[]) ?? [];
     setSlots(slotsData);
 
-    // Funções (map)
     const funcaoIds = Array.from(new Set(slotsData.map((s) => s.funcao_id)));
     if (funcaoIds.length > 0) {
       const fRes = await supabase.from("funcoes").select("id, nome").in("id", funcaoIds);
@@ -166,10 +148,10 @@ export default function EscalaDetalhePage() {
       setFuncoes(new Map());
     }
 
-    // Itens (por slot) — usamos escala_slot_id
+    // ✅ aqui: sem email
     const itRes = await supabase
       .from("escala_itens")
-      .select("id, escala_slot_id, membro_id, funcao_id, estado, notas, membros:membro_id(id, nome, email)")
+      .select("id, escala_slot_id, membro_id, funcao_id, estado, notas, membros:membro_id(id, nome)")
       .eq("escala_id", escalaId);
 
     if (itRes.error) {
@@ -185,8 +167,8 @@ export default function EscalaDetalhePage() {
     }
     setItemsBySlot(mapItems);
 
-    // Membros (para dropdown)
-    const memRes = await supabase.from("membros").select("id, nome, email").order("nome", { ascending: true }).limit(500);
+    // ✅ membros dropdown: id,nome
+    const memRes = await supabase.from("membros").select("id, nome").order("nome", { ascending: true }).limit(500);
     if (memRes.error) {
       setErr(memRes.error.message);
       setBusy(false);
@@ -268,9 +250,7 @@ export default function EscalaDetalhePage() {
     setErr(null);
     setOk(null);
 
-    const res = await supabase.rpc("unassign_member_from_slot", {
-      p_slot_id: slot.id
-    });
+    const res = await supabase.rpc("unassign_member_from_slot", { p_slot_id: slot.id });
 
     setSavingSlot((p) => ({ ...p, [slot.id]: false }));
 
@@ -345,7 +325,7 @@ export default function EscalaDetalhePage() {
                     const disabled = !!savingSlot[s.id];
 
                     const joined = item?.membros && item.membros.length > 0 ? item.membros[0] : null;
-                    const label = joined ? safeMemberLabel({ id: joined.id, nome: joined.nome, email: joined.email }) : null;
+                    const label = joined ? safeMemberLabel({ id: joined.id, nome: joined.nome }) : null;
 
                     return (
                       <div
@@ -361,10 +341,7 @@ export default function EscalaDetalhePage() {
                       >
                         <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
                           <div style={{ fontWeight: 800 }}>
-                            Slot {s.slot_index}{" "}
-                            <span style={{ opacity: 0.8, fontWeight: 600 }}>
-                              · {isFilled ? "preenchido" : "vazio"}
-                            </span>
+                            Slot {s.slot_index} <span style={{ opacity: 0.8, fontWeight: 600 }}>· {isFilled ? "preenchido" : "vazio"}</span>
                           </div>
 
                           {isFilled ? (
@@ -415,18 +392,12 @@ export default function EscalaDetalhePage() {
                               <select
                                 value={selectedMembro[s.id] ?? ""}
                                 onChange={(e) => setSelectedMembro((p) => ({ ...p, [s.id]: e.target.value }))}
-                                style={{
-                                  padding: 10,
-                                  borderRadius: 10,
-                                  border: "1px solid #333",
-                                  background: "#111",
-                                  color: "#fff"
-                                }}
+                                style={{ padding: 10, borderRadius: 10, border: "1px solid #333", background: "#111", color: "#fff" }}
                               >
                                 <option value="">—</option>
                                 {membros.map((m) => (
                                   <option key={m.id} value={m.id}>
-                                    {safeMemberLabel(m)}
+                                    {safeMemberLabel({ id: m.id, nome: m.nome })}
                                   </option>
                                 ))}
                               </select>
@@ -437,13 +408,7 @@ export default function EscalaDetalhePage() {
                               <select
                                 value={getDefaultEstado(s.id)}
                                 onChange={(e) => setSelectedEstado((p) => ({ ...p, [s.id]: e.target.value }))}
-                                style={{
-                                  padding: 10,
-                                  borderRadius: 10,
-                                  border: "1px solid #333",
-                                  background: "#111",
-                                  color: "#fff"
-                                }}
+                                style={{ padding: 10, borderRadius: 10, border: "1px solid #333", background: "#111", color: "#fff" }}
                               >
                                 <option value="confirmado">confirmado</option>
                                 <option value="pendente">pendente</option>
@@ -455,13 +420,7 @@ export default function EscalaDetalhePage() {
                               <input
                                 value={notas[s.id] ?? ""}
                                 onChange={(e) => setNotas((p) => ({ ...p, [s.id]: e.target.value }))}
-                                style={{
-                                  padding: 10,
-                                  borderRadius: 10,
-                                  border: "1px solid #333",
-                                  background: "#111",
-                                  color: "#fff"
-                                }}
+                                style={{ padding: 10, borderRadius: 10, border: "1px solid #333", background: "#111", color: "#fff" }}
                               />
                             </label>
                           </div>
