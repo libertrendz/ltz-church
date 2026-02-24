@@ -21,6 +21,15 @@ type EventoRow = {
   congregacao_id: string | null;
 };
 
+type SerieRow = {
+  id: string;
+  dow: number;
+  start_time: string;
+  titulo_base: string;
+  ativo: boolean;
+  generate_weeks_ahead: number;
+};
+
 function fmtDateTimeLisbon(iso: string | null) {
   if (!iso) return "—";
   const d = new Date(iso);
@@ -67,8 +76,13 @@ export default function AgendaEventosPage() {
   const [congregacoes, setCongregacoes] = useState<CongregacaoRow[]>([]);
   const [items, setItems] = useState<EventoRow[]>([]);
 
+  // UI: month expand/collapse
+  const [openMonths, setOpenMonths] = useState<Record<string, boolean>>({});
+
+  // MODE
+  const [modo, setModo] = useState<"avulso" | "recorrente">("avulso");
+
   // create avulso
-  const [atividadeId, setAtividadeId] = useState("");
   const [congregacaoId, setCongregacaoId] = useState("");
   const [startsLocal, setStartsLocal] = useState("");
   const [endsLocal, setEndsLocal] = useState("");
@@ -77,8 +91,11 @@ export default function AgendaEventosPage() {
   const [descricao, setDescricao] = useState("");
   const [publico, setPublico] = useState(true);
 
-  // UI: month expand/collapse
-  const [openMonths, setOpenMonths] = useState<Record<string, boolean>>({});
+  // create recorrente (semanal)
+  const [dow, setDow] = useState<number>(0); // 0=Dom ... 6=Sáb
+  const [startTime, setStartTime] = useState<string>("10:00");
+  const [weeksAhead, setWeeksAhead] = useState<number>(8);
+  const [tituloBase, setTituloBase] = useState<string>("Culto");
 
   async function requireSessionOrRedirect() {
     const { data } = await supabase.auth.getSession();
@@ -126,7 +143,6 @@ export default function AgendaEventosPage() {
     const loaded = (evRes.data as EventoRow[]) ?? [];
     setItems(loaded);
 
-    // abrir automaticamente o mês actual (Lisboa) e os meses que tenham eventos (default aberto)
     const months = new Set(loaded.map((x) => monthKeyLisbon(x.starts_at)));
     setOpenMonths((prev) => {
       const next: Record<string, boolean> = { ...prev };
@@ -151,14 +167,51 @@ export default function AgendaEventosPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const cultoAtividadeId = useMemo(() => {
+    // Fase 1: fixo “Culto”
+    const culto = atividades.find((a) => a.nome.toLowerCase() === "culto");
+    return culto?.id ?? null;
+  }, [atividades]);
+
+  const congregacoesAtivas = useMemo(() => {
+    const hasAtiva = congregacoes.some((c) => typeof c.ativa === "boolean");
+    return hasAtiva ? congregacoes.filter((c) => c.ativa !== false) : congregacoes;
+  }, [congregacoes]);
+
+  const atividadeName = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const a of atividades) m.set(a.id, a.nome);
+    return m;
+  }, [atividades]);
+
+  const congregacaoName = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const c of congregacoes) m.set(c.id, c.nome);
+    return m;
+  }, [congregacoes]);
+
+  const grouped = useMemo(() => {
+    const map = new Map<string, EventoRow[]>();
+    for (const ev of items) {
+      const k = monthKeyLisbon(ev.starts_at);
+      if (!map.has(k)) map.set(k, []);
+      map.get(k)!.push(ev);
+    }
+    return Array.from(map.entries());
+  }, [items]);
+
+  function toggleMonth(m: string) {
+    setOpenMonths((prev) => ({ ...prev, [m]: !prev[m] }));
+  }
+
   async function createAvulso() {
     setSaving(true);
     setErr(null);
     setOk(null);
 
-    if (!atividadeId) {
+    if (!cultoAtividadeId) {
       setSaving(false);
-      setErr("Seleciona o tipo (atividade).");
+      setErr('Atividade "Culto" não encontrada. Confirma se existe em /atividades.');
       return;
     }
     if (!startsLocal) {
@@ -171,7 +224,7 @@ export default function AgendaEventosPage() {
     const endsIso = endsLocal ? toIsoFromLocal(endsLocal) : null;
 
     const { data, error } = await supabase.rpc("create_agenda_evento", {
-      p_atividade_id: atividadeId,
+      p_atividade_id: cultoAtividadeId,
       p_starts_at: startsIso,
       p_congregacao_id: congregacaoId ? congregacaoId : null,
       p_ends_at: endsIso,
@@ -189,16 +242,70 @@ export default function AgendaEventosPage() {
       return;
     }
 
-    setOk(`Evento criado (id: ${data}).`);
+    setOk(`Evento avulso criado (id: ${data}).`);
     setTitulo("");
     setTema("");
     setDescricao("");
     setStartsLocal("");
     setEndsLocal("");
-    setAtividadeId("");
     setCongregacaoId("");
     setPublico(true);
 
+    await load();
+  }
+
+  async function createRecorrente() {
+    setSaving(true);
+    setErr(null);
+    setOk(null);
+
+    if (!cultoAtividadeId) {
+      setSaving(false);
+      setErr('Atividade "Culto" não encontrada. Confirma se existe em /atividades.');
+      return;
+    }
+
+    if (!startTime || !/^\d{2}:\d{2}$/.test(startTime)) {
+      setSaving(false);
+      setErr("Define a hora (HH:MM).");
+      return;
+    }
+
+    const tituloBaseFinal = (tituloBase || "Culto").trim();
+    const weeks = Number.isFinite(weeksAhead) ? Math.max(1, Math.min(26, weeksAhead)) : 8;
+
+    // cria a série (regra)
+    const ins = await supabase
+      .from("agenda_series")
+      .insert({
+        atividade_id: cultoAtividadeId,
+        dow,
+        start_time: `${startTime}:00`,
+        titulo_base: tituloBaseFinal,
+        ativo: true,
+        generate_weeks_ahead: weeks
+      })
+      .select("id, dow, start_time, titulo_base, ativo, generate_weeks_ahead")
+      .single();
+
+    if (ins.error) {
+      setSaving(false);
+      setErr(ins.error.message);
+      return;
+    }
+
+    const serie = ins.data as SerieRow;
+
+    // gera eventos para a série
+    const gen = await supabase.rpc("generate_events_for_serie", { p_serie_id: serie.id });
+    setSaving(false);
+
+    if (gen.error) {
+      setErr(gen.error.message);
+      return;
+    }
+
+    setOk(`Recorrência criada e eventos gerados (${weeks} semanas).`);
     await load();
   }
 
@@ -223,55 +330,16 @@ export default function AgendaEventosPage() {
     router.replace("/login");
   }
 
-  const atividadeName = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const a of atividades) m.set(a.id, a.nome);
-    return m;
-  }, [atividades]);
-
-  const congregacaoName = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const c of congregacoes) m.set(c.id, c.nome);
-    return m;
-  }, [congregacoes]);
-
-  const atividadesAtivas = useMemo(() => {
-    // não assumir coluna "ativo" (mas se existir, respeitamos)
-    const hasAtivo = atividades.some((a) => typeof a.ativo === "boolean");
-    return hasAtivo ? atividades.filter((a) => a.ativo !== false) : atividades;
-  }, [atividades]);
-
-  const congregacoesAtivas = useMemo(() => {
-    const hasAtiva = congregacoes.some((c) => typeof c.ativa === "boolean");
-    return hasAtiva ? congregacoes.filter((c) => c.ativa !== false) : congregacoes;
-  }, [congregacoes]);
-
-  const grouped = useMemo(() => {
-    const map = new Map<string, EventoRow[]>();
-    for (const ev of items) {
-      const k = monthKeyLisbon(ev.starts_at);
-      if (!map.has(k)) map.set(k, []);
-      map.get(k)!.push(ev);
-    }
-    return Array.from(map.entries()); // já vem ordenado por starts_at no load
-  }, [items]);
-
-  function toggleMonth(m: string) {
-    setOpenMonths((prev) => ({ ...prev, [m]: !prev[m] }));
-  }
-
   return (
     <main style={{ padding: 24, maxWidth: 1000, color: "#fff" }}>
       <h1 style={{ marginTop: 0 }}>Agenda — Eventos</h1>
+
       <p style={{ opacity: 0.85, marginTop: 6 }}>
-        <b>Atividade</b> = tipo (Culto/Reunião/etc.). <b>Série</b> = recorrência. <b>Evento</b> = instância.
+        <b>Fase 1:</b> aqui criamos apenas <b>Culto</b>. Podes criar <b>avulso</b> (qualquer dia) ou <b>recorrente</b>{" "}
+        (regra semanal).
       </p>
 
       <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginTop: 12 }}>
-        <a href="/agenda/series" style={{ color: "#fff", opacity: 0.9, textDecoration: "underline" }}>
-          Recorrências (Séries)
-        </a>
-
         <a href="/escalas" style={{ color: "#fff", opacity: 0.9, textDecoration: "underline" }}>
           Escalas
         </a>
@@ -296,113 +364,183 @@ export default function AgendaEventosPage() {
       {busy ? <p style={{ marginTop: 14 }}>A carregar…</p> : null}
       {err ? <p style={{ marginTop: 14, color: "#ff6b6b", whiteSpace: "pre-wrap" }}>{err}</p> : null}
 
-      {/* Create avulso */}
+      {/* Create */}
       <div style={{ marginTop: 16, padding: 16, borderRadius: 16, border: "1px solid #333", background: "#0b0b0b" }}>
-        <h2 style={{ marginTop: 0, fontSize: 18 }}>Criar evento avulso</h2>
+        <h2 style={{ marginTop: 0, fontSize: 18 }}>Criar</h2>
 
-        <div style={{ display: "grid", gap: 12, maxWidth: 720 }}>
-          <label style={{ display: "grid", gap: 6 }}>
-            <span>Atividade (tipo)</span>
-            <select
-              value={atividadeId}
-              onChange={(e) => setAtividadeId(e.target.value)}
-              style={{ padding: 10, borderRadius: 10, border: "1px solid #333", background: "#111", color: "#fff" }}
-            >
-              <option value="">—</option>
-              {atividadesAtivas.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.nome}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label style={{ display: "grid", gap: 6 }}>
-            <span>Congregação (opcional)</span>
-            <select
-              value={congregacaoId}
-              onChange={(e) => setCongregacaoId(e.target.value)}
-              style={{ padding: 10, borderRadius: 10, border: "1px solid #333", background: "#111", color: "#fff" }}
-            >
-              <option value="">—</option>
-              {congregacoesAtivas.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.nome}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <div style={{ display: "grid", gap: 12, gridTemplateColumns: "1fr 1fr" }}>
-            <label style={{ display: "grid", gap: 6 }}>
-              <span>Início (Lisboa)</span>
-              <input
-                type="datetime-local"
-                value={startsLocal}
-                onChange={(e) => setStartsLocal(e.target.value)}
-                style={{ padding: 10, borderRadius: 10, border: "1px solid #333", background: "#111", color: "#fff" }}
-              />
-            </label>
-
-            <label style={{ display: "grid", gap: 6 }}>
-              <span>Fim (opcional)</span>
-              <input
-                type="datetime-local"
-                value={endsLocal}
-                onChange={(e) => setEndsLocal(e.target.value)}
-                style={{ padding: 10, borderRadius: 10, border: "1px solid #333", background: "#111", color: "#fff" }}
-              />
-            </label>
-          </div>
-
-          <label style={{ display: "grid", gap: 6 }}>
-            <span>Título (opcional)</span>
-            <input
-              value={titulo}
-              onChange={(e) => setTitulo(e.target.value)}
-              style={{ padding: 10, borderRadius: 10, border: "1px solid #333", background: "#111", color: "#fff" }}
-            />
-          </label>
-
-          <label style={{ display: "grid", gap: 6 }}>
-            <span>Tema (opcional)</span>
-            <input
-              value={tema}
-              onChange={(e) => setTema(e.target.value)}
-              style={{ padding: 10, borderRadius: 10, border: "1px solid #333", background: "#111", color: "#fff" }}
-            />
-          </label>
-
-          <label style={{ display: "grid", gap: 6 }}>
-            <span>Descrição (opcional)</span>
-            <input
-              value={descricao}
-              onChange={(e) => setDescricao(e.target.value)}
-              style={{ padding: 10, borderRadius: 10, border: "1px solid #333", background: "#111", color: "#fff" }}
-            />
-          </label>
-
-          <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <input type="checkbox" checked={publico} onChange={(e) => setPublico(e.target.checked)} />
-            <span>Evento público</span>
-          </label>
-
-          <button
-            onClick={createAvulso}
-            disabled={saving}
-            style={{
-              padding: "10px 14px",
-              borderRadius: 12,
-              border: "1px solid #444",
-              background: saving ? "#222" : "#111",
-              color: "#fff",
-              cursor: saving ? "not-allowed" : "pointer",
-              width: 220
-            }}
+        <label style={{ display: "grid", gap: 6, maxWidth: 420 }}>
+          <span>Modo</span>
+          <select
+            value={modo}
+            onChange={(e) => setModo(e.target.value as any)}
+            style={{ padding: 10, borderRadius: 10, border: "1px solid #333", background: "#111", color: "#fff" }}
           >
-            {saving ? "A criar…" : "Criar evento"}
-          </button>
-        </div>
+            <option value="avulso">Avulso</option>
+            <option value="recorrente">Recorrente (semanal)</option>
+          </select>
+        </label>
+
+        {modo === "avulso" ? (
+          <div style={{ display: "grid", gap: 12, maxWidth: 720, marginTop: 12 }}>
+            <label style={{ display: "grid", gap: 6 }}>
+              <span>Congregação (opcional)</span>
+              <select
+                value={congregacaoId}
+                onChange={(e) => setCongregacaoId(e.target.value)}
+                style={{ padding: 10, borderRadius: 10, border: "1px solid #333", background: "#111", color: "#fff" }}
+              >
+                <option value="">—</option>
+                {congregacoesAtivas.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.nome}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <div style={{ display: "grid", gap: 12, gridTemplateColumns: "1fr 1fr" }}>
+              <label style={{ display: "grid", gap: 6 }}>
+                <span>Início (Lisboa)</span>
+                <input
+                  type="datetime-local"
+                  value={startsLocal}
+                  onChange={(e) => setStartsLocal(e.target.value)}
+                  style={{ padding: 10, borderRadius: 10, border: "1px solid #333", background: "#111", color: "#fff" }}
+                />
+              </label>
+
+              <label style={{ display: "grid", gap: 6 }}>
+                <span>Fim (opcional)</span>
+                <input
+                  type="datetime-local"
+                  value={endsLocal}
+                  onChange={(e) => setEndsLocal(e.target.value)}
+                  style={{ padding: 10, borderRadius: 10, border: "1px solid #333", background: "#111", color: "#fff" }}
+                />
+              </label>
+            </div>
+
+            <label style={{ display: "grid", gap: 6 }}>
+              <span>Título (opcional)</span>
+              <input
+                value={titulo}
+                onChange={(e) => setTitulo(e.target.value)}
+                style={{ padding: 10, borderRadius: 10, border: "1px solid #333", background: "#111", color: "#fff" }}
+              />
+            </label>
+
+            <label style={{ display: "grid", gap: 6 }}>
+              <span>Tema (opcional)</span>
+              <input
+                value={tema}
+                onChange={(e) => setTema(e.target.value)}
+                style={{ padding: 10, borderRadius: 10, border: "1px solid #333", background: "#111", color: "#fff" }}
+              />
+            </label>
+
+            <label style={{ display: "grid", gap: 6 }}>
+              <span>Descrição (opcional)</span>
+              <input
+                value={descricao}
+                onChange={(e) => setDescricao(e.target.value)}
+                style={{ padding: 10, borderRadius: 10, border: "1px solid #333", background: "#111", color: "#fff" }}
+              />
+            </label>
+
+            <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <input type="checkbox" checked={publico} onChange={(e) => setPublico(e.target.checked)} />
+              <span>Evento público</span>
+            </label>
+
+            <button
+              onClick={createAvulso}
+              disabled={saving}
+              style={{
+                padding: "10px 14px",
+                borderRadius: 12,
+                border: "1px solid #444",
+                background: saving ? "#222" : "#111",
+                color: "#fff",
+                cursor: saving ? "not-allowed" : "pointer",
+                width: 220
+              }}
+            >
+              {saving ? "A criar…" : "Criar evento (Culto)"}
+            </button>
+          </div>
+        ) : (
+          <div style={{ display: "grid", gap: 12, maxWidth: 720, marginTop: 12 }}>
+            <div style={{ display: "grid", gap: 12, gridTemplateColumns: "1fr 1fr" }}>
+              <label style={{ display: "grid", gap: 6 }}>
+                <span>Dia da semana</span>
+                <select
+                  value={dow}
+                  onChange={(e) => setDow(parseInt(e.target.value, 10))}
+                  style={{ padding: 10, borderRadius: 10, border: "1px solid #333", background: "#111", color: "#fff" }}
+                >
+                  <option value={0}>Domingo</option>
+                  <option value={1}>Segunda</option>
+                  <option value={2}>Terça</option>
+                  <option value={3}>Quarta</option>
+                  <option value={4}>Quinta</option>
+                  <option value={5}>Sexta</option>
+                  <option value={6}>Sábado</option>
+                </select>
+              </label>
+
+              <label style={{ display: "grid", gap: 6 }}>
+                <span>Hora (Lisboa)</span>
+                <input
+                  type="time"
+                  value={startTime}
+                  onChange={(e) => setStartTime(e.target.value)}
+                  style={{ padding: 10, borderRadius: 10, border: "1px solid #333", background: "#111", color: "#fff" }}
+                />
+              </label>
+            </div>
+
+            <label style={{ display: "grid", gap: 6 }}>
+              <span>Título base</span>
+              <input
+                value={tituloBase}
+                onChange={(e) => setTituloBase(e.target.value)}
+                style={{ padding: 10, borderRadius: 10, border: "1px solid #333", background: "#111", color: "#fff" }}
+              />
+            </label>
+
+            <label style={{ display: "grid", gap: 6, maxWidth: 240 }}>
+              <span>Gerar semanas (1–26)</span>
+              <input
+                type="number"
+                min={1}
+                max={26}
+                value={weeksAhead}
+                onChange={(e) => setWeeksAhead(parseInt(e.target.value || "8", 10))}
+                style={{ padding: 10, borderRadius: 10, border: "1px solid #333", background: "#111", color: "#fff" }}
+              />
+            </label>
+
+            <button
+              onClick={createRecorrente}
+              disabled={saving}
+              style={{
+                padding: "10px 14px",
+                borderRadius: 12,
+                border: "1px solid #444",
+                background: saving ? "#222" : "#111",
+                color: "#fff",
+                cursor: saving ? "not-allowed" : "pointer",
+                width: 260
+              }}
+            >
+              {saving ? "A criar…" : "Criar recorrência (Culto)"}
+            </button>
+
+            <p style={{ opacity: 0.75, marginTop: 0 }}>
+              Isto cria a regra semanal (série) e gera eventos automaticamente.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Grouped list */}
@@ -447,7 +585,7 @@ export default function AgendaEventosPage() {
                         const label = ev.titulo?.trim()
                           ? ev.titulo
                           : aName
-                          ? `${aName}${ev.serie_id ? " (gerado)" : " (avulso)"}`
+                          ? `${aName}${ev.serie_id ? " (recorrente)" : " (avulso)"}`
                           : "Evento";
 
                         return (
@@ -474,38 +612,20 @@ export default function AgendaEventosPage() {
                                 {ev.tema ? <div style={{ opacity: 0.85, marginTop: 4 }}>Tema: {ev.tema}</div> : null}
                               </div>
 
-                              <div style={{ display: "flex", gap: 10 }}>
-                                <a
-                                  href={`/escalas`}
-                                  style={{
-                                    padding: "10px 14px",
-                                    borderRadius: 12,
-                                    border: "1px solid #444",
-                                    background: "#111",
-                                    color: "#fff",
-                                    textDecoration: "none",
-                                    whiteSpace: "nowrap"
-                                  }}
-                                  title="Abrir/criar escala a partir do menu Escalas"
-                                >
-                                  Escala
-                                </a>
-
-                                <button
-                                  onClick={() => cancelOrRestore(ev)}
-                                  style={{
-                                    padding: "10px 14px",
-                                    borderRadius: 12,
-                                    border: "1px solid #444",
-                                    background: ev.status === "agendado" ? "#2a0f0f" : "#0f2a12",
-                                    color: "#fff",
-                                    cursor: "pointer",
-                                    minWidth: 130
-                                  }}
-                                >
-                                  {ev.status === "agendado" ? "Cancelar" : "Reativar"}
-                                </button>
-                              </div>
+                              <button
+                                onClick={() => cancelOrRestore(ev)}
+                                style={{
+                                  padding: "10px 14px",
+                                  borderRadius: 12,
+                                  border: "1px solid #444",
+                                  background: ev.status === "agendado" ? "#2a0f0f" : "#0f2a12",
+                                  color: "#fff",
+                                  cursor: "pointer",
+                                  minWidth: 130
+                                }}
+                              >
+                                {ev.status === "agendado" ? "Cancelar" : "Reativar"}
+                              </button>
                             </div>
                           </div>
                         );
