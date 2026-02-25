@@ -9,7 +9,7 @@ function Card({ title, desc, href }: { title: string; desc: string; href: string
   return (
     <a
       href={href}
-      className="card"
+      className="card cardGlow"
       style={{
         display: "block",
         padding: 16,
@@ -17,12 +17,9 @@ function Card({ title, desc, href }: { title: string; desc: string; href: string
         textDecoration: "none"
       }}
     >
-      <div style={{ fontWeight: 900, fontSize: 18, display: "flex", alignItems: "center", gap: 10 }}>
-        <span className="pill pillAccent">•</span>
-        {title}
-      </div>
-      <div style={{ opacity: 0.85, marginTop: 8, lineHeight: 1.35 }}>{desc}</div>
-      <div style={{ marginTop: 12, opacity: 0.9, color: "var(--accent)", fontWeight: 800 }}>Abrir →</div>
+      <div style={{ fontWeight: 950, fontSize: 18 }}>{title}</div>
+      <div style={{ opacity: 0.82, marginTop: 8, lineHeight: 1.35 }}>{desc}</div>
+      <div style={{ marginTop: 12, opacity: 0.95, color: "var(--accent)", fontWeight: 850 }}>Abrir →</div>
     </a>
   );
 }
@@ -30,6 +27,7 @@ function Card({ title, desc, href }: { title: string; desc: string; href: string
 export default function HomePage() {
   const router = useRouter();
   const supabase = useMemo(() => supabaseBrowser(), []);
+
   const [ready, setReady] = useState(false);
   const [isAuthed, setIsAuthed] = useState(false);
 
@@ -90,7 +88,7 @@ export default function HomePage() {
             Início
           </h1>
           <p style={{ opacity: 0.85, marginTop: 0 }}>
-            Acesso rápido ao operacional. Dark fixo + cor de contraste (accent).
+            Acesso rápido ao operacional.
           </p>
         </div>
 
@@ -116,7 +114,7 @@ export default function HomePage() {
       </div>
 
       <div className="card" style={{ marginTop: 18, padding: 14 }}>
-        <div style={{ fontWeight: 900, display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ fontWeight: 950, display: "flex", alignItems: "center", gap: 10 }}>
           <span className="pill pillAccent">Admin</span>
           Configuração
         </div>
