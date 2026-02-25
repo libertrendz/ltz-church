@@ -5,16 +5,15 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "../../lib/supabase/client";
 
-type Evento = {
+type EventoRow = {
   id: string;
   starts_at: string | null;
   titulo: string | null;
   congregacao_id: string | null;
 };
 
-type Congregacao = { id: string; nome: string | null };
-
-type Escala = { id: string; evento_id: string };
+type CongregacaoRow = { id: string; nome: string | null };
+type EscalaRow = { id: string; evento_id: string };
 
 function fmtLisbon(iso: string | null) {
   if (!iso) return "—";
@@ -30,11 +29,9 @@ function fmtLisbon(iso: string | null) {
   }).format(d);
 }
 
-function badge(text: string, tone: "neutral" | "warn" | "ok") {
-  const bg =
-    tone === "ok" ? "#0f2a12" : tone === "warn" ? "#2a1d0f" : "#111";
-  const bd =
-    tone === "ok" ? "#1f6a2a" : tone === "warn" ? "#6a4a1f" : "#333";
+function Pill({ label, tone }: { label: string; tone: "neutral" | "warn" | "ok" }) {
+  const bg = tone === "ok" ? "#0f2a12" : tone === "warn" ? "#2a1d0f" : "#111";
+  const bd = tone === "ok" ? "#1f6a2a" : tone === "warn" ? "#6a4a1f" : "#333";
   return (
     <span
       style={{
@@ -50,7 +47,7 @@ function badge(text: string, tone: "neutral" | "warn" | "ok") {
         opacity: 0.95
       }}
     >
-      {text}
+      {label}
     </span>
   );
 }
@@ -62,11 +59,11 @@ export default function CultosHubPage() {
   const [busy, setBusy] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
-  const [eventos, setEventos] = useState<Evento[]>([]);
-  const [congregacoes, setCongregacoes] = useState<Map<string, Congregacao>>(new Map());
-  const [escalasByEvento, setEscalasByEvento] = useState<Map<string, Escala>>(new Map());
-  const [pessoasCountByEscala, setPessoasCountByEscala] = useState<Map<string, number>>(new Map());
-  const [creatingForEvento, setCreatingForEvento] = useState<Record<string, boolean>>({});
+  const [eventos, setEventos] = useState<EventoRow[]>([]);
+  const [congs, setCongs] = useState<Map<string, CongregacaoRow>>(new Map());
+  const [escalaByEvento, setEscalaByEvento] = useState<Map<string, EscalaRow>>(new Map());
+  const [pessoasByEscala, setPessoasByEscala] = useState<Map<string, number>>(new Map());
+  const [creating, setCreating] = useState<Record<string, boolean>>({});
 
   async function requireSessionOrRedirect() {
     const { data } = await supabase.auth.getSession();
@@ -86,26 +83,19 @@ export default function CultosHubPage() {
     setBusy(true);
     setErr(null);
 
-    const okSession = await requireSessionOrRedirect();
-    if (!okSession) return;
+    const ok = await requireSessionOrRedirect();
+    if (!ok) return;
 
-    // 1) descobrir a atividade "Culto" (regra A: tipo de evento)
-    const atRes = await supabase
-      .from("atividades")
-      .select("id, nome")
-      .ilike("nome", "culto")
-      .limit(1)
-      .maybeSingle();
-
+    // 1) obter atividade "Culto" (case-insensitive)
+    const atRes = await supabase.from("atividades").select("id, nome").ilike("nome", "culto").limit(1).maybeSingle();
     if (atRes.error) {
       setErr(atRes.error.message);
       setBusy(false);
       return;
     }
-
     const cultoAtividadeId = atRes.data?.id;
     if (!cultoAtividadeId) {
-      setErr("Não existe a atividade 'Culto' em atividades.");
+      setErr("Não existe a atividade 'Culto' em 'atividades'.");
       setBusy(false);
       return;
     }
@@ -126,10 +116,10 @@ export default function CultosHubPage() {
       return;
     }
 
-    const evs = (evRes.data as Evento[]) ?? [];
+    const evs = (evRes.data as EventoRow[]) ?? [];
     setEventos(evs);
 
-    // 3) congregações (para nome)
+    // 3) congregações (nomes)
     const congIds = Array.from(new Set(evs.map((e) => e.congregacao_id).filter(Boolean))) as string[];
     if (congIds.length > 0) {
       const cgRes = await supabase.from("congregacoes").select("id, nome").in("id", congIds);
@@ -138,46 +128,38 @@ export default function CultosHubPage() {
         setBusy(false);
         return;
       }
-      const map = new Map<string, Congregacao>();
-      ((cgRes.data as Congregacao[]) ?? []).forEach((c) => map.set(c.id, c));
-      setCongregacoes(map);
+      const map = new Map<string, CongregacaoRow>();
+      ((cgRes.data as CongregacaoRow[]) ?? []).forEach((c) => map.set(c.id, c));
+      setCongs(map);
     } else {
-      setCongregacoes(new Map());
+      setCongs(new Map());
     }
 
     // 4) escalas existentes para estes eventos
     const eventIds = evs.map((e) => e.id);
     if (eventIds.length === 0) {
-      setEscalasByEvento(new Map());
-      setPessoasCountByEscala(new Map());
+      setEscalaByEvento(new Map());
+      setPessoasByEscala(new Map());
       setBusy(false);
       return;
     }
 
-    const esRes = await supabase
-      .from("escalas")
-      .select("id, evento_id")
-      .in("evento_id", eventIds);
-
+    const esRes = await supabase.from("escalas").select("id, evento_id").in("evento_id", eventIds);
     if (esRes.error) {
       setErr(esRes.error.message);
       setBusy(false);
       return;
     }
 
-    const escalas = (esRes.data as Escala[]) ?? [];
-    const mapEsc = new Map<string, Escala>();
+    const escalas = (esRes.data as EscalaRow[]) ?? [];
+    const mapEsc = new Map<string, EscalaRow>();
     escalas.forEach((s) => mapEsc.set(s.evento_id, s));
-    setEscalasByEvento(mapEsc);
+    setEscalaByEvento(mapEsc);
 
-    // 5) pessoas atribuídas: conta por escala via escala_itens
-    // Regra A: NÃO existe "total". Só mostramos quantas pessoas já estão atribuídas.
+    // 5) contar pessoas por escala (via escala_itens) — HUMANO, sem slots/capacidade
     if (escalas.length > 0) {
       const escalaIds = escalas.map((s) => s.id);
-      const itRes = await supabase
-        .from("escala_itens")
-        .select("id, escala_id")
-        .in("escala_id", escalaIds);
+      const itRes = await supabase.from("escala_itens").select("id, escala_id").in("escala_id", escalaIds);
 
       if (itRes.error) {
         setErr(itRes.error.message);
@@ -190,69 +172,63 @@ export default function CultosHubPage() {
         const sid = row.escala_id as string;
         counts.set(sid, (counts.get(sid) ?? 0) + 1);
       }
-      setPessoasCountByEscala(counts);
+      setPessoasByEscala(counts);
     } else {
-      setPessoasCountByEscala(new Map());
+      setPessoasByEscala(new Map());
     }
 
     setBusy(false);
   }
 
   useEffect(() => {
-    let active = true;
+    let alive = true;
     (async () => {
-      if (!active) return;
+      if (!alive) return;
       await load();
     })();
     return () => {
-      active = false;
+      alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function createEscalaForEvento(eventoId: string) {
-    setCreatingForEvento((p) => ({ ...p, [eventoId]: true }));
+    setCreating((p) => ({ ...p, [eventoId]: true }));
     setErr(null);
 
-    const res = await supabase
-      .from("escalas")
-      .insert({ evento_id: eventoId })
-      .select("id, evento_id")
-      .single();
+    const res = await supabase.from("escalas").insert({ evento_id: eventoId }).select("id, evento_id").single();
 
-    setCreatingForEvento((p) => ({ ...p, [eventoId]: false }));
+    setCreating((p) => ({ ...p, [eventoId]: false }));
 
     if (res.error) {
       setErr(res.error.message);
       return;
     }
 
-    const escalaId = (res.data as Escala).id;
+    const escalaId = (res.data as EscalaRow).id;
     router.push(`/escalas/${escalaId}`);
   }
 
   return (
-    <main style={{ padding: 24, maxWidth: 1100, color: "#fff" }}>
-      <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-        <a href="/agenda" style={{ color: "#fff", opacity: 0.9, textDecoration: "underline" }}>
+    <main style={{ padding: 18, maxWidth: 1100, margin: "0 auto", color: "#fff" }}>
+      <header style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+        <a href="/" style={{ color: "#fff", textDecoration: "underline", opacity: 0.9 }}>
+          Início
+        </a>
+        <a href="/agenda" style={{ color: "#fff", textDecoration: "underline", opacity: 0.9 }}>
           Agenda
         </a>
+        <span style={{ flex: 1 }} />
         <button
           onClick={logout}
-          style={{
-            padding: "10px 14px",
-            borderRadius: 12,
-            border: "1px solid #444",
-            background: "#111",
-            color: "#fff"
-          }}
+          style={{ padding: "10px 14px", borderRadius: 12, border: "1px solid #444", background: "#111", color: "#fff" }}
         >
           Sair
         </button>
-      </div>
+      </header>
 
-      <h1 style={{ marginTop: 14 }}>Cultos & Escalas</h1>
-      <p style={{ opacity: 0.85, marginTop: 6 }}>
+      <h1 style={{ marginTop: 14, marginBottom: 6 }}>Cultos & Escalas</h1>
+      <p style={{ opacity: 0.85, marginTop: 0 }}>
         Age por culto/evento. A escala começa vazia e tu adicionas pessoas por função.
       </p>
 
@@ -261,23 +237,31 @@ export default function CultosHubPage() {
 
       {!busy ? (
         <div style={{ marginTop: 14, display: "grid", gap: 14 }}>
-          {eventos.map((ev) => {
-            const escala = escalasByEvento.get(ev.id) ?? null;
-            const pessoas = escala ? (pessoasCountByEscala.get(escala.id) ?? 0) : 0;
+          {eventos.length === 0 ? (
+            <div style={{ padding: 14, borderRadius: 16, border: "1px solid #333", background: "#0b0b0b", opacity: 0.9 }}>
+              Não há cultos futuros encontrados.
+            </div>
+          ) : null}
 
-            const congName = ev.congregacao_id ? congregacoes.get(ev.congregacao_id)?.nome ?? "—" : "—";
+          {eventos.map((ev) => {
+            const escala = escalaByEvento.get(ev.id) ?? null;
+            const pessoas = escala ? (pessoasByEscala.get(escala.id) ?? 0) : 0;
+
+            const congName = ev.congregacao_id ? congs.get(ev.congregacao_id)?.nome ?? "—" : "—";
             const title = ev.titulo?.trim() ? ev.titulo : "Culto";
 
             const hasEscala = !!escala;
             const hasEquipa = pessoas > 0;
 
-            const badgeNode = !hasEscala
-              ? badge("Sem escala", "neutral")
-              : !hasEquipa
-                ? badge("Sem equipa", "warn")
-                : badge(`${pessoas} pessoa(s)`, "ok");
+            const pill = !hasEscala ? (
+              <Pill label="Sem escala" tone="neutral" />
+            ) : !hasEquipa ? (
+              <Pill label="Sem equipa" tone="warn" />
+            ) : (
+              <Pill label={`${pessoas} pessoa(s)`} tone="ok" />
+            );
 
-            const btnDisabled = creatingForEvento[ev.id] === true;
+            const btnDisabled = creating[ev.id] === true;
 
             return (
               <div
@@ -296,7 +280,7 @@ export default function CultosHubPage() {
 
                   {hasEscala ? (
                     <button
-                      onClick={() => router.push(`/escalas/${escala.id}`)}
+                      onClick={() => router.push(`/escalas/${escala!.id}`)}
                       style={{
                         padding: "10px 14px",
                         borderRadius: 14,
@@ -327,9 +311,7 @@ export default function CultosHubPage() {
                 <div style={{ opacity: 0.9 }}>{fmtLisbon(ev.starts_at)}</div>
                 <div style={{ opacity: 0.8 }}>Congregação: {congName}</div>
 
-                <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-                  {badgeNode}
-                </div>
+                <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>{pill}</div>
               </div>
             );
           })}
