@@ -1,20 +1,21 @@
 /* PATH: app/components/AppHeader.tsx */
 "use client";
 
-import { useEffect, useState } from "react";
-import { usePathname } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { supabaseBrowser } from "../../lib/supabase/client";
 
-type NavItem = { href: string; label: string };
+type NavItem = { href: string; label: string; group?: "main" | "account" };
 
 const NAV: NavItem[] = [
-  { href: "/", label: "Início" },
-  { href: "/cultos", label: "Cultos & Escalas" },
-  { href: "/agenda", label: "Agenda" },
-  { href: "/membros", label: "Membros" },
-  { href: "/departamentos", label: "Departamentos" },
-  { href: "/funcoes", label: "Funções" },
-  { href: "/definicoes/aparencia", label: "Aparência" },
-  { href: "/me", label: "Perfil" }
+  { href: "/", label: "Início", group: "main" },
+  { href: "/cultos", label: "Cultos & Escalas", group: "main" },
+  { href: "/agenda", label: "Agenda", group: "main" },
+  { href: "/membros", label: "Membros", group: "main" },
+  { href: "/departamentos", label: "Departamentos", group: "main" },
+  { href: "/funcoes", label: "Funções", group: "main" },
+  { href: "/definicoes/aparencia", label: "Aparência", group: "account" },
+  { href: "/me", label: "Perfil", group: "account" }
 ];
 
 function Hamburger({ open }: { open: boolean }) {
@@ -37,7 +38,14 @@ function Hamburger({ open }: { open: boolean }) {
 
 export default function AppHeader() {
   const pathname = usePathname();
+  const router = useRouter();
+  const supabase = useMemo(() => supabaseBrowser(), []);
+
   const [open, setOpen] = useState(false);
+  const [tenantNome, setTenantNome] = useState<string | null>(null);
+
+  // não mostrar header no login (fica mais “app” e menos “site”)
+  if (pathname?.startsWith("/login")) return null;
 
   // fecha ao navegar
   useEffect(() => {
@@ -63,10 +71,56 @@ export default function AppHeader() {
     };
   }, [open]);
 
-  const active = (href: string) => {
+  // carregar nome do tenant (igreja)
+  useEffect(() => {
+    let active = true;
+
+    (async () => {
+      try {
+        // cache local para não bater sempre
+        const cached = localStorage.getItem("ltz_tenant_nome");
+        if (cached && active) setTenantNome(cached);
+
+        const { data: sess } = await supabase.auth.getSession();
+        const userId = sess.session?.user?.id;
+        if (!userId) return;
+
+        const uRes = await supabase.from("usuarios").select("igreja_id").eq("id", userId).single();
+        if (uRes.error) return;
+
+        const igrejaId = uRes.data?.igreja_id as string | null;
+        if (!igrejaId) return;
+
+        const iRes = await supabase.from("igrejas").select("nome").eq("id", igrejaId).single();
+        if (iRes.error) return;
+
+        const nome = (iRes.data?.nome as string | null) || null;
+        if (!active) return;
+
+        setTenantNome(nome);
+        if (nome) localStorage.setItem("ltz_tenant_nome", nome);
+      } catch {
+        // silencioso
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [supabase]);
+
+  const activeHref = (href: string) => {
     if (href === "/") return pathname === "/";
     return pathname?.startsWith(href);
   };
+
+  async function logout() {
+    await supabase.auth.signOut();
+    router.replace("/login");
+  }
+
+  const mainItems = NAV.filter((n) => n.group === "main");
+  const accountItems = NAV.filter((n) => n.group === "account");
 
   return (
     <header
@@ -90,16 +144,7 @@ export default function AppHeader() {
         }}
       >
         {/* Brand */}
-        <a
-          href="/"
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 12,
-            textDecoration: "none",
-            minWidth: 0
-          }}
-        >
+        <a href="/" style={{ display: "flex", alignItems: "center", gap: 12, textDecoration: "none", minWidth: 0 }}>
           <img
             src="/images/logo_oficial_church.png"
             alt="LTZ-CHURCH"
@@ -111,34 +156,26 @@ export default function AppHeader() {
             <div style={{ color: "#fff", fontWeight: 950, letterSpacing: 0.2, lineHeight: 1.1 }}>
               LTZ-CHURCH
             </div>
-            <div style={{ color: "rgba(255,255,255,.75)", fontWeight: 700, fontSize: 13, lineHeight: 1.2 }}>
-              Operacional
+            <div style={{ color: "rgba(255,255,255,.72)", fontWeight: 800, fontSize: 13, lineHeight: 1.2 }}>
+              {tenantNome ? tenantNome : "—"}
             </div>
           </div>
         </a>
 
         <span style={{ flex: 1 }} />
 
-        {/* Desktop nav (esconde em mobile via CSS inline simples) */}
-        <div
-          className="navDesktop"
-          style={{
-            display: "none",
-            gap: 14,
-            alignItems: "center",
-            flexWrap: "wrap"
-          }}
-        >
-          {NAV.filter((x) => !["/me", "/definicoes/aparencia"].includes(x.href)).map((item) => (
+        {/* Desktop nav */}
+        <div className="navDesktop" style={{ display: "none", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
+          {mainItems.map((item) => (
             <a
               key={item.href}
               href={item.href}
               className="navlink"
               style={{
                 textDecoration: "none",
-                opacity: active(item.href) ? 1 : 0.9,
-                fontWeight: active(item.href) ? 900 : 800,
-                borderBottom: active(item.href) ? "2px solid var(--accent)" : "2px solid transparent",
+                opacity: activeHref(item.href) ? 1 : 0.9,
+                fontWeight: activeHref(item.href) ? 900 : 800,
+                borderBottom: activeHref(item.href) ? "2px solid var(--accent)" : "2px solid transparent",
                 paddingBottom: 6
               }}
             >
@@ -151,6 +188,9 @@ export default function AppHeader() {
           <a className="navlink" href="/me" style={{ textDecoration: "none", opacity: 0.9 }}>
             Perfil
           </a>
+          <button onClick={logout} className="btn" style={{ padding: "8px 10px", borderRadius: 12 }}>
+            Sair
+          </button>
         </div>
 
         {/* Mobile hamburger */}
@@ -175,7 +215,6 @@ export default function AppHeader() {
         </button>
       </nav>
 
-      {/* CSS simples para desktop vs mobile */}
       <style
         dangerouslySetInnerHTML={{
           __html: `
@@ -189,26 +228,12 @@ export default function AppHeader() {
 
       {/* Drawer (mobile) */}
       {open ? (
-        <div
-          role="dialog"
-          aria-modal="true"
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 60
-          }}
-        >
-          {/* backdrop */}
+        <div role="dialog" aria-modal="true" style={{ position: "fixed", inset: 0, zIndex: 60 }}>
           <div
             onClick={() => setOpen(false)}
-            style={{
-              position: "absolute",
-              inset: 0,
-              background: "rgba(0,0,0,.55)"
-            }}
+            style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,.55)" }}
           />
 
-          {/* panel */}
           <div
             style={{
               position: "absolute",
@@ -228,38 +253,63 @@ export default function AppHeader() {
           >
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
               <div style={{ fontWeight: 950, fontSize: 16 }}>Menu</div>
-              <button
-                onClick={() => setOpen(false)}
-                className="btn"
-                style={{ padding: "8px 10px", borderRadius: 12 }}
-              >
+              <button onClick={() => setOpen(false)} className="btn" style={{ padding: "8px 10px", borderRadius: 12 }}>
                 Fechar
               </button>
             </div>
 
-            <div style={{ display: "grid", gap: 10 }}>
-              {NAV.map((item) => (
-                <a
-                  key={item.href}
-                  href={item.href}
-                  style={{
-                    textDecoration: "none",
-                    color: "#fff",
-                    padding: "12px 12px",
-                    borderRadius: 14,
-                    border: active(item.href) ? "1px solid color-mix(in srgb, var(--accent) 55%, rgba(255,255,255,.14) 45%)" : "1px solid rgba(255,255,255,.10)",
-                    background: active(item.href) ? "color-mix(in srgb, var(--accent) 12%, #0b0b0b 88%)" : "#0b0b0b",
-                    fontWeight: active(item.href) ? 950 : 850
-                  }}
-                >
-                  {item.label}
-                </a>
-              ))}
+            <div style={{ overflow: "auto", paddingRight: 2 }}>
+              {/* MAIN */}
+              <div style={{ display: "grid", gap: 10 }}>
+                {mainItems.map((item) => (
+                  <a
+                    key={item.href}
+                    href={item.href}
+                    style={{
+                      textDecoration: "none",
+                      color: "#fff",
+                      padding: "12px 12px",
+                      borderRadius: 14,
+                      border: activeHref(item.href)
+                        ? "1px solid color-mix(in srgb, var(--accent) 55%, rgba(255,255,255,.14) 45%)"
+                        : "1px solid rgba(255,255,255,.10)",
+                      background: activeHref(item.href) ? "color-mix(in srgb, var(--accent) 12%, #0b0b0b 88%)" : "#0b0b0b",
+                      fontWeight: activeHref(item.href) ? 950 : 850
+                    }}
+                  >
+                    {item.label}
+                  </a>
+                ))}
+              </div>
+
+              {/* ACCOUNT */}
+              <div style={{ marginTop: 14, opacity: 0.75, fontSize: 12, fontWeight: 900 }}>Conta</div>
+              <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
+                {accountItems.map((item) => (
+                  <a
+                    key={item.href}
+                    href={item.href}
+                    style={{
+                      textDecoration: "none",
+                      color: "#fff",
+                      padding: "12px 12px",
+                      borderRadius: 14,
+                      border: activeHref(item.href)
+                        ? "1px solid color-mix(in srgb, var(--accent) 55%, rgba(255,255,255,.14) 45%)"
+                        : "1px solid rgba(255,255,255,.10)",
+                      background: activeHref(item.href) ? "color-mix(in srgb, var(--accent) 12%, #0b0b0b 88%)" : "#0b0b0b",
+                      fontWeight: activeHref(item.href) ? 950 : 850
+                    }}
+                  >
+                    {item.label}
+                  </a>
+                ))}
+              </div>
             </div>
 
-            <div style={{ opacity: 0.8, fontSize: 12, lineHeight: 1.35 }}>
-              Dark fixo + cor de contraste (accent).
-            </div>
+            <button onClick={logout} className="btn btnAccent" style={{ width: "100%", borderRadius: 14 }}>
+              Sair
+            </button>
           </div>
         </div>
       ) : null}
