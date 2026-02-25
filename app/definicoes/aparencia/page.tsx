@@ -23,7 +23,6 @@ export default function AparenciaPage() {
   const [ready, setReady] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
-
   const [selected, setSelected] = useState<Option>(OPTIONS[0]);
 
   useEffect(() => {
@@ -31,12 +30,12 @@ export default function AparenciaPage() {
     (async () => {
       const { data } = await supabase.auth.getSession();
       if (!active) return;
+
       if (!data.session) {
         router.replace("/login");
         return;
       }
 
-      // load do localStorage (produto já)
       try {
         const v = localStorage.getItem("ltz_accent");
         const found = OPTIONS.find((o) => o.hex.toLowerCase() === (v || "").toLowerCase());
@@ -55,14 +54,12 @@ export default function AparenciaPage() {
     setErr(null);
     setOk(null);
 
-    // 1) aplica no browser (imediato)
     try {
       localStorage.setItem("ltz_accent", selected.hex);
       document.documentElement.style.setProperty("--accent", selected.hex);
     } catch {}
 
-    // 2) tenta persistir no tenant (igrejas.cor_primaria) — se RLS permitir
-    // (se falhar, o utilizador continua bem com o efeito local)
+    // tentar persistir no tenant (se RLS permitir)
     try {
       const { data: sess } = await supabase.auth.getSession();
       const userId = sess.session?.user?.id;
@@ -76,14 +73,13 @@ export default function AparenciaPage() {
 
       const up = await supabase.from("igrejas").update({ cor_primaria: selected.hex }).eq("id", igrejaId);
       if (up.error) {
-        // não bloqueia produto (fica local), mas avisamos
-        setOk("Guardado no dispositivo. (Persistência por tenant ainda não autorizada por permissões.)");
+        setOk("Guardado.");
         return;
       }
 
-      setOk("Guardado. (Aplicado e persistido no tenant.)");
+      setOk("Guardado.");
     } catch (e: any) {
-      setOk("Guardado no dispositivo.");
+      setOk("Guardado.");
       setErr(e?.message ? `Nota: ${e.message}` : null);
     }
   }
@@ -93,17 +89,15 @@ export default function AparenciaPage() {
   return (
     <main style={{ padding: 6 }}>
       <h1 style={{ marginTop: 4, marginBottom: 6 }}>Aparência</h1>
-      <p style={{ opacity: 0.85, marginTop: 0 }}>
-        Dark mode é fixo. Só mudamos a cor de contraste (accent).
-      </p>
+      <p style={{ opacity: 0.85, marginTop: 0 }}>Escolhe a cor de contraste.</p>
 
       {err ? <p style={{ color: "#ff6b6b", whiteSpace: "pre-wrap" }}>{err}</p> : null}
       {ok ? <p style={{ color: "#7CFF7C" }}>{ok}</p> : null}
 
-      <section style={{ marginTop: 12, border: "1px solid #2a2a2a", background: "#0b0b0b", borderRadius: 18, padding: 14 }}>
+      <section className="card" style={{ marginTop: 12, borderRadius: 18, padding: 14 }}>
         <div style={{ fontWeight: 900, marginBottom: 10 }}>Escolher cor</div>
 
-        <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
+        <div style={{ display: "grid", gap: 10 }}>
           {OPTIONS.map((o) => {
             const active = o.key === selected.key;
             return (
@@ -113,7 +107,7 @@ export default function AparenciaPage() {
                 style={{
                   textAlign: "left",
                   borderRadius: 16,
-                  border: active ? `1px solid ${o.hex}` : "1px solid #333",
+                  border: active ? `1px solid ${o.hex}` : "1px solid rgba(255,255,255,.12)",
                   background: "#070707",
                   color: "#fff",
                   padding: 12,
@@ -128,7 +122,7 @@ export default function AparenciaPage() {
                       height: 18,
                       borderRadius: 999,
                       background: o.hex,
-                      border: "1px solid #333",
+                      border: "1px solid rgba(255,255,255,.18)",
                       display: "inline-block"
                     }}
                   />
@@ -140,15 +134,8 @@ export default function AparenciaPage() {
         </div>
 
         <div style={{ marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-          <button
-            onClick={guardar}
-            className="btnAccent"
-            style={{
-              padding: "10px 14px",
-              borderRadius: 12,
-              cursor: "pointer"
-            }}
-          >
+          {/* ✅ agora é legível */}
+          <button onClick={guardar} className="btn btnAccent" style={{ borderRadius: 12 }}>
             Guardar
           </button>
 
