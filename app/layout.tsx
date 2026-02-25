@@ -1,7 +1,18 @@
 /* PATH: app/layout.tsx */
 export const metadata = {
   title: "LTZ-CHURCH",
-  description: "Multi-tenant SaaS para igrejas"
+  description: "Multi-tenant SaaS para igrejas",
+  icons: {
+    icon: [
+      { url: "/images/favicon-16x16.png", sizes: "16x16", type: "image/png" },
+      { url: "/images/favicon-32x32.png", sizes: "32x32", type: "image/png" },
+      { url: "/images/favicon-48x48.png", sizes: "48x48", type: "image/png" },
+      { url: "/images/favicon.ico" }
+    ],
+    apple: [{ url: "/images/icon-180x180.png", sizes: "180x180", type: "image/png" }]
+  },
+  manifest: "/manifest.webmanifest",
+  themeColor: "#D4AF37"
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -15,6 +26,41 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           color: "#fff"
         }}
       >
+        {/* aplica accent cedo (localStorage) */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+(function(){
+  try {
+    var v = localStorage.getItem("ltz_accent");
+    if (v) document.documentElement.style.setProperty("--accent", v);
+  } catch(e) {}
+})();`
+          }}
+        />
+
+        <style
+          dangerouslySetInnerHTML={{
+            __html: `
+:root{
+  --accent: #D4AF37; /* default dourado */
+}
+a{ color: var(--accent); }
+a.navlink{ color:#fff; opacity:.9; }
+a.navlink:hover{ opacity:1; }
+.btnAccent{
+  border: 1px solid rgba(255,255,255,.18);
+  background: color-mix(in srgb, var(--accent) 22%, #111 78%);
+  color:#fff;
+}
+.badgeAccent{
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, #333 45%);
+  background: color-mix(in srgb, var(--accent) 18%, #0b0b0b 82%);
+}
+`
+          }}
+        />
+
         <header
           style={{
             position: "sticky",
@@ -36,29 +82,39 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               flexWrap: "wrap"
             }}
           >
-            <a href="/" style={{ color: "#fff", textDecoration: "none", fontWeight: 900 }}>
-              LTZ-CHURCH
+            <a href="/" style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none" }}>
+              <img
+                src="/images/logo_oficial_church.png"
+                alt="LTZ-CHURCH"
+                width={28}
+                height={28}
+                style={{ borderRadius: 6, display: "block" }}
+              />
+              <span style={{ color: "#fff", fontWeight: 900 }}>LTZ-CHURCH</span>
             </a>
 
-            <a href="/cultos" style={{ color: "#fff", opacity: 0.9, textDecoration: "none" }}>
+            <a className="navlink" href="/cultos" style={{ textDecoration: "none" }}>
               Cultos & Escalas
             </a>
-            <a href="/agenda" style={{ color: "#fff", opacity: 0.9, textDecoration: "none" }}>
+            <a className="navlink" href="/agenda" style={{ textDecoration: "none" }}>
               Agenda
             </a>
-            <a href="/membros" style={{ color: "#fff", opacity: 0.9, textDecoration: "none" }}>
+            <a className="navlink" href="/membros" style={{ textDecoration: "none" }}>
               Membros
             </a>
-            <a href="/departamentos" style={{ color: "#fff", opacity: 0.9, textDecoration: "none" }}>
+            <a className="navlink" href="/departamentos" style={{ textDecoration: "none" }}>
               Departamentos
             </a>
-            <a href="/funcoes" style={{ color: "#fff", opacity: 0.9, textDecoration: "none" }}>
+            <a className="navlink" href="/funcoes" style={{ textDecoration: "none" }}>
               Funções
             </a>
 
             <span style={{ flex: 1 }} />
 
-            <a href="/me" style={{ color: "#fff", opacity: 0.9, textDecoration: "none" }}>
+            <a className="navlink" href="/definicoes/aparencia" style={{ textDecoration: "none" }}>
+              Aparência
+            </a>
+            <a className="navlink" href="/me" style={{ textDecoration: "none" }}>
               Perfil
             </a>
           </nav>
