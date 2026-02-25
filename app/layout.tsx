@@ -1,4 +1,6 @@
 /* PATH: app/layout.tsx */
+import AppHeader from "./components/AppHeader";
+
 export const metadata = {
   title: "LTZ-CHURCH",
   description: "Multi-tenant SaaS para igrejas",
@@ -26,6 +28,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           color: "#fff"
         }}
       >
+        {/* aplica accent cedo (localStorage) */}
         <script
           dangerouslySetInnerHTML={{
             __html: `
@@ -52,17 +55,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   --shadowHover: 0 18px 50px rgba(0,0,0,.55);
   --textDim: rgba(255,255,255,.82);
 }
-
 *{ box-sizing: border-box; }
 
 a{ color: var(--accent); }
 a.navlink{ color:#fff; opacity:.9; }
 a.navlink:hover{ opacity:1; }
 
-.h-accent{
-  display:inline-block;
-  position:relative;
-}
+.h-accent{ display:inline-block; position:relative; }
 .h-accent:after{
   content:"";
   display:block;
@@ -74,7 +73,6 @@ a.navlink:hover{ opacity:1; }
   opacity:.9;
 }
 
-/* cards: charme global */
 .card{
   border: 1px solid var(--border);
   background: radial-gradient(1200px 400px at 20% 0%, rgba(255,255,255,.05), transparent 55%), var(--card);
@@ -87,8 +85,6 @@ a.navlink:hover{ opacity:1; }
   box-shadow: var(--shadowHover);
   border-color: var(--border2);
 }
-
-/* card com glow subtil do accent (não é “tema completo”, é detalhe) */
 .cardGlow{
   box-shadow:
     0 14px 38px rgba(0,0,0,.45),
@@ -96,7 +92,6 @@ a.navlink:hover{ opacity:1; }
     0 0 26px color-mix(in srgb, var(--accent) 18%, transparent 82%);
 }
 
-/* botões */
 .btn{
   padding: 10px 14px;
   border-radius: 12px;
@@ -116,7 +111,6 @@ a.navlink:hover{ opacity:1; }
   background: color-mix(in srgb, var(--accent) 26%, #111 74%);
 }
 
-/* pills/badges */
 .pill{
   display:inline-flex;
   align-items:center;
@@ -136,65 +130,7 @@ a.navlink:hover{ opacity:1; }
           }}
         />
 
-        <header
-          style={{
-            position: "sticky",
-            top: 0,
-            zIndex: 50,
-            background: "rgba(5,5,5,0.92)",
-            borderBottom: "1px solid #222",
-            backdropFilter: "blur(10px)"
-          }}
-        >
-          <nav
-            style={{
-              maxWidth: 1100,
-              margin: "0 auto",
-              padding: "14px 18px",
-              display: "flex",
-              gap: 14,
-              alignItems: "center",
-              flexWrap: "wrap"
-            }}
-          >
-            <a href="/" style={{ display: "flex", alignItems: "center", gap: 12, textDecoration: "none" }}>
-              {/* logo maior (56px) */}
-              <img
-                src="/images/logo_oficial_church.png"
-                alt="LTZ-CHURCH"
-                width={56}
-                height={56}
-                style={{ borderRadius: 12, display: "block" }}
-              />
-              <span style={{ color: "#fff", fontWeight: 900, letterSpacing: 0.2 }}>LTZ-CHURCH</span>
-            </a>
-
-            <a className="navlink" href="/cultos" style={{ textDecoration: "none" }}>
-              Cultos & Escalas
-            </a>
-            <a className="navlink" href="/agenda" style={{ textDecoration: "none" }}>
-              Agenda
-            </a>
-            <a className="navlink" href="/membros" style={{ textDecoration: "none" }}>
-              Membros
-            </a>
-            <a className="navlink" href="/departamentos" style={{ textDecoration: "none" }}>
-              Departamentos
-            </a>
-            <a className="navlink" href="/funcoes" style={{ textDecoration: "none" }}>
-              Funções
-            </a>
-
-            <span style={{ flex: 1 }} />
-
-            <a className="navlink" href="/definicoes/aparencia" style={{ textDecoration: "none" }}>
-              Aparência
-            </a>
-            <a className="navlink" href="/me" style={{ textDecoration: "none" }}>
-              Perfil
-            </a>
-          </nav>
-        </header>
+        <AppHeader />
 
         <main style={{ maxWidth: 1100, margin: "0 auto", padding: 18 }}>{children}</main>
       </body>
