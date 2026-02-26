@@ -1,8 +1,9 @@
 /* PATH: app/components/AppHeader.tsx */
 "use client";
 
-import { useEffect, useState } from "react";
-import { usePathname } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { supabaseBrowser } from "../../lib/supabase/client";
 
 type NavItem = { href: string; label: string };
 
@@ -37,7 +38,14 @@ function Hamburger({ open }: { open: boolean }) {
 
 export default function AppHeader() {
   const pathname = usePathname();
+  const router = useRouter();
+  const supabase = useMemo(() => supabaseBrowser(), []);
+
   const [open, setOpen] = useState(false);
+  const [tenantNome, setTenantNome] = useState<string>("—");
+
+  // ✅ não mostrar header no login
+  if (pathname?.startsWith("/login")) return null;
 
   // fecha ao navegar
   useEffect(() => {
@@ -63,10 +71,63 @@ export default function AppHeader() {
     };
   }, [open]);
 
+  // ✅ carregar nome da igreja (tenant) com cache local
+  useEffect(() => {
+    let active = true;
+
+    (async () => {
+      try {
+        // cache imediato (evita “piscas”)
+        const cached = localStorage.getItem("ltz_tenant_nome");
+        if (cached && active) setTenantNome(cached);
+
+        const { data: sess } = await supabase.auth.getSession();
+        const userId = sess.session?.user?.id;
+
+        if (!userId) {
+          if (active) setTenantNome("—");
+          return;
+        }
+
+        const uRes = await supabase.from("usuarios").select("igreja_id").eq("id", userId).single();
+        if (uRes.error) return;
+
+        const igrejaId = (uRes.data?.igreja_id as string | null) || null;
+        if (!igrejaId) return;
+
+        const iRes = await supabase.from("igrejas").select("nome").eq("id", igrejaId).single();
+        if (iRes.error) return;
+
+        const nome = (iRes.data?.nome as string | null) || null;
+        if (!active) return;
+
+        const finalNome = nome || "—";
+        setTenantNome(finalNome);
+        if (nome) localStorage.setItem("ltz_tenant_nome", nome);
+      } catch {
+        // silencioso
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [supabase]);
+
   const active = (href: string) => {
     if (href === "/") return pathname === "/";
     return pathname?.startsWith(href);
   };
+
+  async function logout() {
+    try {
+      await supabase.auth.signOut();
+    } catch {
+      // ignora
+    }
+    // ✅ hard redirect evita “client-side exception” pós-logout
+    window.location.href = "/login";
+  }
 
   return (
     <header
@@ -111,15 +172,15 @@ export default function AppHeader() {
             <div style={{ color: "#fff", fontWeight: 950, letterSpacing: 0.2, lineHeight: 1.1 }}>
               LTZ-CHURCH
             </div>
-            <div style={{ color: "rgba(255,255,255,.75)", fontWeight: 700, fontSize: 13, lineHeight: 1.2 }}>
-              Operacional
+            <div style={{ color: "rgba(255,255,255,.75)", fontWeight: 900, fontSize: 13, lineHeight: 1.2 }}>
+              {tenantNome}
             </div>
           </div>
         </a>
 
         <span style={{ flex: 1 }} />
 
-        {/* Desktop nav (esconde em mobile via CSS inline simples) */}
+        {/* Desktop nav */}
         <div
           className="navDesktop"
           style={{
@@ -129,7 +190,7 @@ export default function AppHeader() {
             flexWrap: "wrap"
           }}
         >
-          {NAV.filter((x) => !["/me", "/definicoes/aparencia"].includes(x.href)).map((item) => (
+          {NAV.map((item) => (
             <a
               key={item.href}
               href={item.href}
@@ -145,12 +206,10 @@ export default function AppHeader() {
               {item.label}
             </a>
           ))}
-          <a className="navlink" href="/definicoes/aparencia" style={{ textDecoration: "none", opacity: 0.9 }}>
-            Aparência
-          </a>
-          <a className="navlink" href="/me" style={{ textDecoration: "none", opacity: 0.9 }}>
-            Perfil
-          </a>
+
+          <button onClick={logout} className="btn" style={{ padding: "8px 10px", borderRadius: 12 }}>
+            Sair
+          </button>
         </div>
 
         {/* Mobile hamburger */}
@@ -187,7 +246,7 @@ export default function AppHeader() {
         }}
       />
 
-      {/* Drawer (mobile) */}
+      {/* Drawer (mobile) — ✅ “bulletproof”: flex + flex:1 + overflow */}
       {open ? (
         <div
           role="dialog"
@@ -198,71 +257,3 @@ export default function AppHeader() {
             zIndex: 60
           }}
         >
-          {/* backdrop */}
-          <div
-            onClick={() => setOpen(false)}
-            style={{
-              position: "absolute",
-              inset: 0,
-              background: "rgba(0,0,0,.55)"
-            }}
-          />
-
-          {/* panel */}
-          <div
-            style={{
-              position: "absolute",
-              top: 0,
-              right: 0,
-              height: "100%",
-              width: "86%",
-              maxWidth: 360,
-              background: "rgba(8,8,8,.98)",
-              borderLeft: "1px solid rgba(255,255,255,.10)",
-              boxShadow: "0 18px 60px rgba(0,0,0,.6)",
-              padding: 14,
-              display: "grid",
-              gridTemplateRows: "auto 1fr auto",
-              gap: 12
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-              <div style={{ fontWeight: 950, fontSize: 16 }}>Menu</div>
-              <button
-                onClick={() => setOpen(false)}
-                className="btn"
-                style={{ padding: "8px 10px", borderRadius: 12 }}
-              >
-                Fechar
-              </button>
-            </div>
-
-            <div style={{ display: "grid", gap: 10 }}>
-              {NAV.map((item) => (
-                <a
-                  key={item.href}
-                  href={item.href}
-                  style={{
-                    textDecoration: "none",
-                    color: "#fff",
-                    padding: "12px 12px",
-                    borderRadius: 14,
-                    border: active(item.href) ? "1px solid color-mix(in srgb, var(--accent) 55%, rgba(255,255,255,.14) 45%)" : "1px solid rgba(255,255,255,.10)",
-                    background: active(item.href) ? "color-mix(in srgb, var(--accent) 12%, #0b0b0b 88%)" : "#0b0b0b",
-                    fontWeight: active(item.href) ? 950 : 850
-                  }}
-                >
-                  {item.label}
-                </a>
-              ))}
-            </div>
-
-            <div style={{ opacity: 0.8, fontSize: 12, lineHeight: 1.35 }}>
-              Dark fixo + cor de contraste (accent).
-            </div>
-          </div>
-        </div>
-      ) : null}
-    </header>
-  );
-}
