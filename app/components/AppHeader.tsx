@@ -19,7 +19,6 @@ const NAV_OPERACIONAL_ADMIN: NavItem[] = [
   { href: "/funcoes", label: "Funções" }
 ];
 
-// sem 404 por agora
 const NAV_OPERACIONAL_MEMBRO: NavItem[] = [
   { href: "/", label: "Início" },
   { href: "/agenda", label: "Minha Agenda" },
@@ -77,13 +76,11 @@ export default function AppHeader() {
     return pathname?.startsWith(href);
   };
 
-  // fecha menus ao navegar
   useEffect(() => {
     setOpenMobile(false);
     setOpenConta(false);
   }, [pathname]);
 
-  // ESC fecha
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") {
@@ -95,7 +92,6 @@ export default function AppHeader() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // bloquear scroll quando menu mobile aberto
   useEffect(() => {
     if (!openMobile) return;
     const prev = document.body.style.overflow;
@@ -105,13 +101,11 @@ export default function AppHeader() {
     };
   }, [openMobile]);
 
-  // carregar role + tenantNome
   useEffect(() => {
     let alive = true;
 
     (async () => {
       try {
-        // cache rápido
         try {
           const cachedNome = localStorage.getItem("ltz_tenant_nome");
           const cachedRole = localStorage.getItem("ltz_role");
@@ -183,7 +177,6 @@ export default function AppHeader() {
 
       await supabase.auth.signOut();
     } finally {
-      // hard redirect evita erros client-side pós-logout
       window.location.assign("/login");
     }
   }
@@ -209,7 +202,6 @@ export default function AppHeader() {
           gap: 12
         }}
       >
-        {/* Brand */}
         <a
           href="/"
           style={{
@@ -220,36 +212,19 @@ export default function AppHeader() {
             minWidth: 0
           }}
         >
-          <img
-            src="/images/logo_oficial_church.png"
-            alt={APP_NAME}
-            width={64}
-            height={64}
-            style={{ borderRadius: 14, display: "block" }}
-          />
+          <img src="/images/logo_oficial_church.png" alt={APP_NAME} width={64} height={64} style={{ borderRadius: 14, display: "block" }} />
           <div style={{ minWidth: 0 }}>
             <div style={{ color: "#fff", fontWeight: 950, letterSpacing: 0.2, lineHeight: 1.1 }}>{APP_NAME}</div>
             <div style={{ color: "rgba(255,255,255,.80)", fontWeight: 850, fontSize: 13, lineHeight: 1.2 }}>
               {tenantNome}{" "}
-              <span style={{ opacity: 0.55, fontWeight: 800 }}>
-                {loaded ? (role === "admin" ? "• Admin" : "• Membro") : "• …"}
-              </span>
+              <span style={{ opacity: 0.55, fontWeight: 800 }}>{loaded ? (role === "admin" ? "• Admin" : "• Membro") : "• …"}</span>
             </div>
           </div>
         </a>
 
         <span style={{ flex: 1 }} />
 
-        {/* Desktop nav */}
-        <div
-          className="navDesktop"
-          style={{
-            display: "none",
-            gap: 14,
-            alignItems: "center",
-            flexWrap: "wrap"
-          }}
-        >
+        <div className="navDesktop" style={{ display: "none", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
           {NAV_OPERACIONAL.map((item) => (
             <a
               key={item.href}
@@ -268,12 +243,7 @@ export default function AppHeader() {
           ))}
 
           <div style={{ position: "relative" }}>
-            <button
-              className="btn"
-              onClick={() => setOpenConta((v) => !v)}
-              aria-label="Conta"
-              style={{ padding: "9px 12px", borderRadius: 14 }}
-            >
+            <button className="btn" onClick={() => setOpenConta((v) => !v)} aria-label="Conta" style={{ padding: "9px 12px", borderRadius: 14 }}>
               Conta ▾
             </button>
 
@@ -303,9 +273,7 @@ export default function AppHeader() {
                       textDecoration: "none",
                       color: "#fff",
                       fontWeight: 850,
-                      background: isActive(x.href)
-                        ? "color-mix(in srgb, var(--accent) 12%, #0b0b0b 88%)"
-                        : "transparent",
+                      background: isActive(x.href) ? "color-mix(in srgb, var(--accent) 12%, #0b0b0b 88%)" : "transparent",
                       border: isActive(x.href) ? "1px solid rgba(255,255,255,.12)" : "1px solid transparent"
                     }}
                   >
@@ -314,7 +282,6 @@ export default function AppHeader() {
                 ))}
 
                 <div style={{ height: 10 }} />
-
                 <button className="btn btnAccent" onClick={logout} style={{ width: "100%" }}>
                   Sair
                 </button>
@@ -323,7 +290,6 @@ export default function AppHeader() {
           </div>
         </div>
 
-        {/* Mobile hamburger */}
         <button
           className="navMobileBtn"
           onClick={() => setOpenMobile((v) => !v)}
@@ -345,7 +311,6 @@ export default function AppHeader() {
         </button>
       </nav>
 
-      {/* CSS: desktop vs mobile */}
       <style
         dangerouslySetInnerHTML={{
           __html: `
@@ -357,53 +322,46 @@ export default function AppHeader() {
         }}
       />
 
-      {/* MOBILE MENU — FULL SCREEN + FUNDO SÓLIDO + LISTA NÃO COLAPSA */}
+      {/* ✅ OVERLAY OPACO + PAINEL SÓLIDO (A HOME NÃO APARECE) */}
       {openMobile ? (
-        <div
-          role="dialog"
-          aria-modal="true"
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 90,
-            background: "#050505" // ✅ cobre a app inteira (home não aparece)
-          }}
-        >
-          {/* topo */}
+        <div role="dialog" aria-modal="true" style={{ position: "fixed", inset: 0, zIndex: 999 }}>
+          {/* overlay realmente opaco */}
           <div
+            onClick={() => setOpenMobile(false)}
             style={{
-              padding: 14,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 12,
-              borderBottom: "1px solid rgba(255,255,255,.08)"
+              position: "absolute",
+              inset: 0,
+              background: "rgba(0,0,0,.92)" // ✅ “mata” o conteúdo atrás
             }}
-          >
-            <div style={{ fontWeight: 950, fontSize: 18 }}>Menu</div>
-            <button onClick={() => setOpenMobile(false)} className="btn" style={{ padding: "8px 10px", borderRadius: 12 }}>
-              Fechar
-            </button>
-          </div>
+          />
 
-          {/* corpo (flex + minHeight 0 para não colapsar; scroll no meio) */}
+          {/* painel sólido em cima do overlay */}
           <div
             style={{
-              height: "calc(100vh - 64px)",
+              position: "absolute",
+              inset: 0,
+              background: "#050505",
               display: "flex",
-              flexDirection: "column",
-              minHeight: 0
+              flexDirection: "column"
             }}
           >
-            {/* lista */}
             <div
               style={{
-                flex: 1,
-                minHeight: 0,
-                overflow: "auto",
-                padding: 14
+                padding: 14,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 12,
+                borderBottom: "1px solid rgba(255,255,255,.08)"
               }}
             >
+              <div style={{ fontWeight: 950, fontSize: 18 }}>Menu</div>
+              <button onClick={() => setOpenMobile(false)} className="btn" style={{ padding: "8px 10px", borderRadius: 12 }}>
+                Fechar
+              </button>
+            </div>
+
+            <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: 14 }}>
               <SectionTitle>OPERACIONAL</SectionTitle>
               <div style={{ display: "grid", gap: 10 }}>
                 {NAV_OPERACIONAL.map((item) => (
@@ -418,9 +376,7 @@ export default function AppHeader() {
                       border: isActive(item.href)
                         ? "1px solid color-mix(in srgb, var(--accent) 55%, rgba(255,255,255,.14) 45%)"
                         : "1px solid rgba(255,255,255,.10)",
-                      background: isActive(item.href)
-                        ? "color-mix(in srgb, var(--accent) 12%, #0b0b0b 88%)"
-                        : "#101010",
+                      background: isActive(item.href) ? "color-mix(in srgb, var(--accent) 12%, #0b0b0b 88%)" : "#101010",
                       fontWeight: isActive(item.href) ? 950 : 850
                     }}
                   >
@@ -445,9 +401,7 @@ export default function AppHeader() {
                       border: isActive(item.href)
                         ? "1px solid color-mix(in srgb, var(--accent) 55%, rgba(255,255,255,.14) 45%)"
                         : "1px solid rgba(255,255,255,.10)",
-                      background: isActive(item.href)
-                        ? "color-mix(in srgb, var(--accent) 12%, #0b0b0b 88%)"
-                        : "#101010",
+                      background: isActive(item.href) ? "color-mix(in srgb, var(--accent) 12%, #0b0b0b 88%)" : "#101010",
                       fontWeight: isActive(item.href) ? 950 : 850
                     }}
                   >
@@ -457,13 +411,7 @@ export default function AppHeader() {
               </div>
             </div>
 
-            {/* rodapé fixo (Sair) */}
-            <div
-              style={{
-                padding: 14,
-                borderTop: "1px solid rgba(255,255,255,.08)"
-              }}
-            >
+            <div style={{ padding: 14, borderTop: "1px solid rgba(255,255,255,.08)" }}>
               <button onClick={logout} className="btn btnAccent" style={{ width: "100%", borderRadius: 14, padding: "12px 14px" }}>
                 Sair
               </button>
