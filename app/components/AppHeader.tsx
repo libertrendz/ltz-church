@@ -2,7 +2,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { supabaseBrowser } from "../../lib/supabase/client";
 
 type NavItem = { href: string; label: string };
@@ -23,7 +23,8 @@ const NAV_MEMBRO: NavItem[] = [
   { href: "/", label: "Início" },
   { href: "/agenda", label: "Minha Agenda" },
   { href: "/cultos", label: "Minhas Escalas" },
-  { href: "/me", label: "Perfil" }
+  { href: "/me", label: "Perfil" },
+  { href: "/definicoes/aparencia", label: "Aparência" } // tu disseste que Aparência também fica disponível aos membros
 ];
 
 function Hamburger({ open }: { open: boolean }) {
@@ -46,6 +47,7 @@ function Hamburger({ open }: { open: boolean }) {
 
 export default function AppHeader() {
   const pathname = usePathname();
+  const router = useRouter();
   const supabase = useMemo(() => supabaseBrowser(), []);
   const [open, setOpen] = useState(false);
 
@@ -53,11 +55,19 @@ export default function AppHeader() {
   const [tenantNome, setTenantNome] = useState<string>("—");
   const [role, setRole] = useState<"admin" | "membro">("membro"); // seguro por defeito
   const [loaded, setLoaded] = useState(false);
+  const [authed, setAuthed] = useState<boolean>(false);
 
-  // não mostrar header no login
+  // não mostrar header no login (e nem quando está explicitamente fora do app)
   if (pathname?.startsWith("/login")) return null;
 
-  // fecha ao navegar
+  const NAV = role === "admin" ? NAV_ADMIN : NAV_MEMBRO;
+
+  const active = (href: string) => {
+    if (href === "/") return pathname === "/";
+    return pathname?.startsWith(href);
+  };
+
+  // fecha drawer ao navegar
   useEffect(() => {
     setOpen(false);
   }, [pathname]);
@@ -81,38 +91,98 @@ export default function AppHeader() {
     };
   }, [open]);
 
-  // carregar role + tenantNome (usuarios -> igrejas)
+  // util: limpar caches locais ligados à sessão
+  function clearLocalSessionCaches() {
+    try {
+      localStorage.removeItem("ltz_role");
+      localStorage.removeItem("ltz_tenant_nome");
+    } catch {}
+  }
+
+  async function logout() {
+    try {
+      setOpen(false);
+      clearLocalSessionCaches();
+      await supabase.auth.signOut();
+    } finally {
+      // hard replace para evitar “estado fantasma” (este é o fix principal do teu crash)
+      router.replace("/login");
+      // e força re-render limpo
+      setAuthed(false);
+      setLoaded(true);
+      setTenantNome("—");
+      setRole("membro");
+    }
+  }
+
+  // 1) escutar mudanças de auth (corrige o bug do logout)
   useEffect(() => {
     let alive = true;
 
     (async () => {
       try {
-        // cache “rápido”
-        const cachedNome = localStorage.getItem("ltz_tenant_nome");
-        const cachedRole = localStorage.getItem("ltz_role");
-
-        if (cachedNome && alive) setTenantNome(cachedNome);
-        if ((cachedRole === "admin" || cachedRole === "membro") && alive) setRole(cachedRole);
-
         const { data: sess } = await supabase.auth.getSession();
-        const userId = sess.session?.user?.id;
+        if (!alive) return;
+        setAuthed(!!sess.session);
+      } catch {
+        if (!alive) return;
+        setAuthed(false);
+      }
+    })();
 
-        if (!userId) {
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!alive) return;
+
+      const ok = !!session;
+      setAuthed(ok);
+
+      if (!ok) {
+        // sessão terminou -> limpa tudo e não deixa UI tentar “adivinhar”
+        clearLocalSessionCaches();
+        setTenantNome("—");
+        setRole("membro");
+        setLoaded(true);
+      }
+    });
+
+    return () => {
+      alive = false;
+      sub.subscription.unsubscribe();
+    };
+  }, [supabase]);
+
+  // 2) carregar role + tenantNome (usuarios -> igrejas) APENAS se estiver autenticado
+  useEffect(() => {
+    let alive = true;
+
+    (async () => {
+      try {
+        // cache rápido
+        try {
+          const cachedNome = localStorage.getItem("ltz_tenant_nome");
+          const cachedRole = localStorage.getItem("ltz_role");
+          if (cachedNome && alive) setTenantNome(cachedNome);
+          if ((cachedRole === "admin" || cachedRole === "membro") && alive) setRole(cachedRole);
+        } catch {}
+
+        if (!authed) {
           if (!alive) return;
-          setRole("membro");
-          setTenantNome("—");
           setLoaded(true);
           return;
         }
 
-        const uRes = await supabase
-          .from("usuarios")
-          .select("role, igreja_id")
-          .eq("id", userId)
-          .maybeSingle();
+        const { data: sess } = await supabase.auth.getSession();
+        const userId = sess.session?.user?.id;
+        if (!userId) {
+          if (!alive) return;
+          setLoaded(true);
+          return;
+        }
+
+        const uRes = await supabase.from("usuarios").select("role, igreja_id").eq("id", userId).maybeSingle();
+        if (!alive) return;
 
         if (uRes.error || !uRes.data) {
-          if (!alive) return;
           setLoaded(true);
           return;
         }
@@ -120,18 +190,21 @@ export default function AppHeader() {
         const r = (uRes.data.role as "admin" | "membro" | null) ?? "membro";
         const igrejaId = (uRes.data.igreja_id as string | null) ?? null;
 
-        if (!alive) return;
         setRole(r);
-        localStorage.setItem("ltz_role", r);
+        try {
+          localStorage.setItem("ltz_role", r);
+        } catch {}
 
         if (igrejaId) {
           const iRes = await supabase.from("igrejas").select("nome").eq("id", igrejaId).maybeSingle();
-          const nome = (iRes.data?.nome as string | null) ?? null;
           if (!alive) return;
+          const nome = (iRes.data?.nome as string | null) ?? null;
 
           if (nome) {
             setTenantNome(nome);
-            localStorage.setItem("ltz_tenant_nome", nome);
+            try {
+              localStorage.setItem("ltz_tenant_nome", nome);
+            } catch {}
           } else {
             setTenantNome("—");
           }
@@ -149,14 +222,10 @@ export default function AppHeader() {
     return () => {
       alive = false;
     };
-  }, [supabase]);
+  }, [supabase, authed]);
 
-  const NAV = role === "admin" ? NAV_ADMIN : NAV_MEMBRO;
-
-  const active = (href: string) => {
-    if (href === "/") return pathname === "/";
-    return pathname?.startsWith(href);
-  };
+  // Se não está autenticado, não renderiza header (evita flicker e evita exceções em rotas públicas)
+  if (!authed) return null;
 
   return (
     <header
@@ -198,22 +267,18 @@ export default function AppHeader() {
             style={{ borderRadius: 14, display: "block" }}
           />
           <div style={{ minWidth: 0 }}>
-            <div style={{ color: "#fff", fontWeight: 950, letterSpacing: 0.2, lineHeight: 1.1 }}>
-              LT-CHURCH
-            </div>
+            <div style={{ color: "#fff", fontWeight: 950, letterSpacing: 0.2, lineHeight: 1.1 }}>LT-CHURCH</div>
             <div
               style={{
                 color: "rgba(255,255,255,.80)",
-                fontWeight: 950,
-                fontSize: 15,
-                letterSpacing: 0.4,
+                fontWeight: 900,
+                fontSize: 14,
+                letterSpacing: 0.3,
                 lineHeight: 1.2
               }}
             >
               {tenantNome}
-              <span style={{ opacity: 0.55, fontWeight: 800, marginLeft: 8 }}>
-                {loaded ? (role === "admin" ? "Admin" : "Membro") : "…"}
-              </span>
+              <span style={{ opacity: 0.45, fontWeight: 800, marginLeft: 8 }}>{loaded ? "" : "…"}</span>
             </div>
           </div>
         </a>
@@ -247,16 +312,16 @@ export default function AppHeader() {
             </a>
           ))}
 
-          {/* Só admin vê Aparência no desktop */}
-          {role === "admin" ? (
-            <a className="navlink" href="/definicoes/aparencia" style={{ textDecoration: "none", opacity: 0.9 }}>
-              Aparência
-            </a>
-          ) : null}
-
+          <a className="navlink" href="/definicoes/aparencia" style={{ textDecoration: "none", opacity: 0.9 }}>
+            Aparência
+          </a>
           <a className="navlink" href="/me" style={{ textDecoration: "none", opacity: 0.9 }}>
             Perfil
           </a>
+
+          <button onClick={logout} className="btn" style={{ padding: "8px 12px", borderRadius: 12 }}>
+            Sair
+          </button>
         </div>
 
         {/* Mobile hamburger */}
@@ -281,7 +346,7 @@ export default function AppHeader() {
         </button>
       </nav>
 
-      {/* CSS simples para desktop vs mobile */}
+      {/* CSS: desktop vs mobile */}
       <style
         dangerouslySetInnerHTML={{
           __html: `
@@ -293,25 +358,13 @@ export default function AppHeader() {
         }}
       />
 
-      {/* Drawer (mobile) — mantém o teu estilo atual */}
+      {/* Drawer (mobile) */}
       {open ? (
-        <div
-          role="dialog"
-          aria-modal="true"
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 60
-          }}
-        >
+        <div role="dialog" aria-modal="true" style={{ position: "fixed", inset: 0, zIndex: 60 }}>
           {/* backdrop */}
           <div
             onClick={() => setOpen(false)}
-            style={{
-              position: "absolute",
-              inset: 0,
-              background: "rgba(0,0,0,.55)"
-            }}
+            style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,.72)" }}
           />
 
           {/* panel */}
@@ -321,26 +374,28 @@ export default function AppHeader() {
               top: 0,
               right: 0,
               height: "100%",
-              width: "86%",
-              maxWidth: 360,
+              width: "88%",
+              maxWidth: 380,
               background: "rgba(8,8,8,.98)",
               borderLeft: "1px solid rgba(255,255,255,.10)",
               boxShadow: "0 18px 60px rgba(0,0,0,.6)",
               padding: 14,
               display: "grid",
-              gridTemplateRows: "auto 1fr auto",
+              gridTemplateRows: "auto auto 1fr auto",
               gap: 12
             }}
           >
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
               <div style={{ fontWeight: 950, fontSize: 16 }}>Menu</div>
-              <button
-                onClick={() => setOpen(false)}
-                className="btn"
-                style={{ padding: "8px 10px", borderRadius: 12 }}
-              >
+              <button onClick={() => setOpen(false)} className="btn" style={{ padding: "8px 10px", borderRadius: 12 }}>
                 Fechar
               </button>
+            </div>
+
+            {/* context */}
+            <div style={{ opacity: 0.85, fontSize: 12, lineHeight: 1.25 }}>
+              <div style={{ fontWeight: 900 }}>{tenantNome}</div>
+              <div style={{ opacity: 0.7 }}>{role === "admin" ? "Admin" : "Membro"}</div>
             </div>
 
             <div style={{ display: "grid", gap: 10 }}>
@@ -367,9 +422,9 @@ export default function AppHeader() {
               ))}
             </div>
 
-            <div style={{ opacity: 0.8, fontSize: 12, lineHeight: 1.35 }}>
-              {role === "admin" ? "Modo Admin" : "Modo Membro"}
-            </div>
+            <button onClick={logout} className="btn btnAccent" style={{ width: "100%", borderRadius: 14 }}>
+              Sair
+            </button>
           </div>
         </div>
       ) : null}
