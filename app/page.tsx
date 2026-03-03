@@ -147,7 +147,7 @@ export default function HomePage() {
   if (!isAuthed) {
     return (
       <main style={{ padding: 24 }}>
-        <h1>LTZ-CHURCH</h1>
+        <h1>LT-CHURCH</h1>
         <p>Precisas de autenticação para aceder ao app.</p>
 
         <a href="/login" className="btn btnAccent" style={{ display: "inline-flex", marginTop: 12 }}>
