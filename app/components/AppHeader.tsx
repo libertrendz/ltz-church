@@ -5,6 +5,8 @@ import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
 import { supabaseBrowser } from "../../lib/supabase/client";
 
+const APP_NAME = "LT-CHURCH"; // ✅ anti-regressão: marca oficial (sem Z)
+
 type Role = "admin" | "membro";
 type NavItem = { href: string; label: string };
 
@@ -17,13 +19,14 @@ const NAV_OPERACIONAL_ADMIN: NavItem[] = [
   { href: "/funcoes", label: "Funções" }
 ];
 
+// Nota: rotas atuais (sem criar 404 agora)
 const NAV_OPERACIONAL_MEMBRO: NavItem[] = [
   { href: "/", label: "Início" },
-  { href: "/cultos", label: "Minhas Escalas" },
-  { href: "/agenda", label: "Minha Agenda" }
+  { href: "/agenda", label: "Minha Agenda" },
+  { href: "/cultos", label: "Minhas Escalas" }
 ];
 
-const NAV_DEFINICOES: NavItem[] = [
+const NAV_CONTA: NavItem[] = [
   { href: "/definicoes/aparencia", label: "Aparência" },
   { href: "/me", label: "Perfil" }
 ];
@@ -46,11 +49,20 @@ function Hamburger({ open }: { open: boolean }) {
   );
 }
 
+function SectionTitle({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{ marginTop: 8, marginBottom: 6, fontSize: 12, letterSpacing: 1, opacity: 0.65, fontWeight: 950 }}>
+      {children}
+    </div>
+  );
+}
+
 export default function AppHeader() {
   const pathname = usePathname();
   const supabase = useMemo(() => supabaseBrowser(), []);
 
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(false); // mobile full-screen menu
+  const [accountOpen, setAccountOpen] = useState(false); // desktop dropdown
 
   const [tenantNome, setTenantNome] = useState<string>("—");
   const [role, setRole] = useState<Role>("membro"); // default seguro
@@ -59,21 +71,32 @@ export default function AppHeader() {
   // não mostrar header no login
   if (pathname?.startsWith("/login")) return null;
 
-  // fecha drawer ao navegar
+  const NAV_OPERACIONAL = role === "admin" ? NAV_OPERACIONAL_ADMIN : NAV_OPERACIONAL_MEMBRO;
+
+  const active = (href: string) => {
+    if (href === "/") return pathname === "/";
+    return pathname?.startsWith(href);
+  };
+
+  // fecha menus ao navegar
   useEffect(() => {
     setOpen(false);
+    setAccountOpen(false);
   }, [pathname]);
 
   // ESC fecha
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key === "Escape") {
+        setOpen(false);
+        setAccountOpen(false);
+      }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // bloquear scroll quando drawer aberto
+  // bloquear scroll quando menu mobile aberto
   useEffect(() => {
     if (!open) return;
     const prev = document.body.style.overflow;
@@ -89,11 +112,13 @@ export default function AppHeader() {
 
     (async () => {
       try {
-        // cache rápido (não pode quebrar UX)
-        const cachedNome = localStorage.getItem("ltz_tenant_nome");
-        const cachedRole = localStorage.getItem("ltz_role");
-        if (cachedNome && alive) setTenantNome(cachedNome);
-        if ((cachedRole === "admin" || cachedRole === "membro") && alive) setRole(cachedRole);
+        // cache rápido
+        try {
+          const cachedNome = localStorage.getItem("ltz_tenant_nome");
+          const cachedRole = localStorage.getItem("ltz_role");
+          if (cachedNome && alive) setTenantNome(cachedNome);
+          if ((cachedRole === "admin" || cachedRole === "membro") && alive) setRole(cachedRole as Role);
+        } catch {}
 
         const { data: sess } = await supabase.auth.getSession();
         const userId = sess.session?.user?.id;
@@ -113,16 +138,21 @@ export default function AppHeader() {
         const igrejaId = (uRes.data?.igreja_id as string | null) ?? null;
 
         setRole(r);
-        localStorage.setItem("ltz_role", r);
+        try {
+          localStorage.setItem("ltz_role", r);
+        } catch {}
 
         if (igrejaId) {
           const iRes = await supabase.from("igrejas").select("nome").eq("id", igrejaId).maybeSingle();
           const nome = (iRes.data?.nome as string | null) ?? null;
 
           if (!alive) return;
+
           if (nome) {
             setTenantNome(nome);
-            localStorage.setItem("ltz_tenant_nome", nome);
+            try {
+              localStorage.setItem("ltz_tenant_nome", nome);
+            } catch {}
           } else {
             setTenantNome("—");
           }
@@ -142,30 +172,19 @@ export default function AppHeader() {
     };
   }, [supabase]);
 
-  const NAV_OP = role === "admin" ? NAV_OPERACIONAL_ADMIN : NAV_OPERACIONAL_MEMBRO;
-
-  const active = (href: string) => {
-    if (href === "/") return pathname === "/";
-    return pathname?.startsWith(href);
-  };
-
-  async function doLogout() {
+  async function logout() {
     try {
-      // fecha drawer já, evita estados estranhos
       setOpen(false);
+      setAccountOpen(false);
 
-      // limpa caches locais
       try {
         localStorage.removeItem("ltz_role");
         localStorage.removeItem("ltz_tenant_nome");
-        // mantém ltz_accent (é visual do tenant; se quiseres limpar, diz)
       } catch {}
 
       await supabase.auth.signOut();
-
-      // ✅ hard redirect (resolve o “client-side exception” pós-logout)
-      window.location.assign("/login");
-    } catch {
+    } finally {
+      // ✅ hard redirect para evitar client-side exception após signOut
       window.location.assign("/login");
     }
   }
@@ -204,41 +223,17 @@ export default function AppHeader() {
         >
           <img
             src="/images/logo_oficial_church.png"
-            alt="LTZ-CHURCH"
+            alt={APP_NAME}
             width={64}
             height={64}
             style={{ borderRadius: 14, display: "block" }}
           />
-
           <div style={{ minWidth: 0 }}>
-            <div style={{ color: "#fff", fontWeight: 950, letterSpacing: 0.2, lineHeight: 1.1 }}>
-              LTZ-CHURCH
-            </div>
-
-            <div
-              style={{
-                display: "flex",
-                gap: 10,
-                alignItems: "center",
-                flexWrap: "wrap",
-                color: "rgba(255,255,255,.82)",
-                fontWeight: 900,
-                fontSize: 14,
-                lineHeight: 1.2
-              }}
-            >
-              <span>{tenantNome}</span>
-
-              <span
-                className="pill pillAccent"
-                style={{
-                  fontSize: 12,
-                  padding: "5px 10px",
-                  fontWeight: 950,
-                  opacity: loaded ? 1 : 0.7
-                }}
-              >
-                {loaded ? (role === "admin" ? "Admin" : "Membro") : "…"}
+            <div style={{ color: "#fff", fontWeight: 950, letterSpacing: 0.2, lineHeight: 1.1 }}>{APP_NAME}</div>
+            <div style={{ color: "rgba(255,255,255,.80)", fontWeight: 850, fontSize: 13, lineHeight: 1.2 }}>
+              {tenantNome}{" "}
+              <span style={{ opacity: 0.55, fontWeight: 800 }}>
+                {loaded ? (role === "admin" ? "• Admin" : "• Membro") : "• …"}
               </span>
             </div>
           </div>
@@ -246,17 +241,9 @@ export default function AppHeader() {
 
         <span style={{ flex: 1 }} />
 
-        {/* Desktop nav — só Operacional */}
-        <div
-          className="navDesktop"
-          style={{
-            display: "none",
-            gap: 14,
-            alignItems: "center",
-            flexWrap: "wrap"
-          }}
-        >
-          {NAV_OP.map((item) => (
+        {/* Desktop: só operacional */}
+        <div className="navDesktop" style={{ display: "none", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
+          {NAV_OPERACIONAL.map((item) => (
             <a
               key={item.href}
               href={item.href}
@@ -264,7 +251,7 @@ export default function AppHeader() {
               style={{
                 textDecoration: "none",
                 opacity: active(item.href) ? 1 : 0.9,
-                fontWeight: active(item.href) ? 950 : 850,
+                fontWeight: active(item.href) ? 900 : 800,
                 borderBottom: active(item.href) ? "2px solid var(--accent)" : "2px solid transparent",
                 paddingBottom: 6
               }}
@@ -273,18 +260,59 @@ export default function AppHeader() {
             </a>
           ))}
 
-          {/* botão Definições (leva para Aparência por enquanto) */}
-          <a
-            href="/definicoes/aparencia"
-            className="navlink"
-            style={{ textDecoration: "none", opacity: 0.9, fontWeight: 850 }}
-          >
-            Definições
-          </a>
+          {/* Conta dropdown */}
+          <div style={{ position: "relative" }}>
+            <button
+              className="btn"
+              onClick={() => setAccountOpen((v) => !v)}
+              aria-label="Abrir conta"
+              style={{ padding: "9px 12px", borderRadius: 14 }}
+            >
+              Conta ▾
+            </button>
 
-          <button onClick={doLogout} className="btn" style={{ padding: "8px 12px", borderRadius: 12 }}>
-            Sair
-          </button>
+            {accountOpen ? (
+              <div
+                style={{
+                  position: "absolute",
+                  right: 0,
+                  top: "calc(100% + 10px)",
+                  width: 230,
+                  borderRadius: 16,
+                  border: "1px solid rgba(255,255,255,.12)",
+                  background: "rgba(10,10,10,.98)",
+                  boxShadow: "0 18px 60px rgba(0,0,0,.6)",
+                  padding: 10,
+                  zIndex: 70
+                }}
+              >
+                {NAV_CONTA.map((x) => (
+                  <a
+                    key={x.href}
+                    href={x.href}
+                    style={{
+                      display: "block",
+                      padding: "10px 12px",
+                      borderRadius: 12,
+                      textDecoration: "none",
+                      color: "#fff",
+                      fontWeight: 850,
+                      background: active(x.href) ? "color-mix(in srgb, var(--accent) 12%, #0b0b0b 88%)" : "transparent",
+                      border: active(x.href) ? "1px solid rgba(255,255,255,.12)" : "1px solid transparent"
+                    }}
+                  >
+                    {x.label}
+                  </a>
+                ))}
+
+                <div style={{ height: 10 }} />
+
+                <button className="btn btnAccent" onClick={logout} style={{ width: "100%" }}>
+                  Sair
+                </button>
+              </div>
+            ) : null}
+          </div>
         </div>
 
         {/* Mobile hamburger */}
@@ -309,7 +337,7 @@ export default function AppHeader() {
         </button>
       </nav>
 
-      {/* CSS desktop vs mobile */}
+      {/* CSS: desktop vs mobile */}
       <style
         dangerouslySetInnerHTML={{
           __html: `
@@ -321,31 +349,25 @@ export default function AppHeader() {
         }}
       />
 
-      {/* Drawer (mobile) — opaco + backdrop forte (sem mistura com o fundo) */}
+      {/* MOBILE MENU — FULL SCREEN (não se vê a home atrás) */}
       {open ? (
-        <div role="dialog" aria-modal="true" style={{ position: "fixed", inset: 0, zIndex: 60 }}>
-          {/* backdrop */}
+        <div role="dialog" aria-modal="true" style={{ position: "fixed", inset: 0, zIndex: 90 }}>
+          {/* backdrop forte */}
           <div
             onClick={() => setOpen(false)}
             style={{
               position: "absolute",
               inset: 0,
-              background: "rgba(0,0,0,.72)" // ✅ mais forte
+              background: "rgba(0,0,0,.86)"
             }}
           />
 
-          {/* panel */}
+          {/* painel full-screen sólido */}
           <div
             style={{
               position: "absolute",
-              top: 0,
-              right: 0,
-              height: "100%",
-              width: "90%",
-              maxWidth: 380,
-              background: "#0a0a0a", // ✅ sólido, sem transparência
-              borderLeft: "1px solid rgba(255,255,255,.10)",
-              boxShadow: "0 18px 60px rgba(0,0,0,.70)",
+              inset: 0,
+              background: "#050505",
               padding: 14,
               display: "grid",
               gridTemplateRows: "auto 1fr auto",
@@ -353,30 +375,28 @@ export default function AppHeader() {
             }}
           >
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-              <div style={{ fontWeight: 950, fontSize: 16 }}>Menu</div>
+              <div style={{ fontWeight: 950, fontSize: 18 }}>Menu</div>
               <button onClick={() => setOpen(false)} className="btn" style={{ padding: "8px 10px", borderRadius: 12 }}>
                 Fechar
               </button>
             </div>
 
-            <div style={{ display: "grid", gap: 14 }}>
-              <div style={{ opacity: 0.8, fontWeight: 950, fontSize: 12, letterSpacing: 0.4 }}>OPERACIONAL</div>
+            <div style={{ overflow: "auto", paddingBottom: 10 }}>
+              <SectionTitle>OPERACIONAL</SectionTitle>
               <div style={{ display: "grid", gap: 10 }}>
-                {NAV_OP.map((item) => (
+                {NAV_OPERACIONAL.map((item) => (
                   <a
                     key={item.href}
                     href={item.href}
                     style={{
                       textDecoration: "none",
                       color: "#fff",
-                      padding: "12px 12px",
-                      borderRadius: 14,
+                      padding: "14px 14px",
+                      borderRadius: 16,
                       border: active(item.href)
                         ? "1px solid color-mix(in srgb, var(--accent) 55%, rgba(255,255,255,.14) 45%)"
                         : "1px solid rgba(255,255,255,.10)",
-                      background: active(item.href)
-                        ? "color-mix(in srgb, var(--accent) 12%, #0b0b0b 88%)"
-                        : "#0b0b0b",
+                      background: active(item.href) ? "color-mix(in srgb, var(--accent) 12%, #0b0b0b 88%)" : "#0b0b0b",
                       fontWeight: active(item.href) ? 950 : 850
                     }}
                   >
@@ -385,23 +405,23 @@ export default function AppHeader() {
                 ))}
               </div>
 
-              <div style={{ opacity: 0.8, fontWeight: 950, fontSize: 12, letterSpacing: 0.4 }}>DEFINIÇÕES</div>
+              <div style={{ height: 14 }} />
+
+              <SectionTitle>CONTA</SectionTitle>
               <div style={{ display: "grid", gap: 10 }}>
-                {NAV_DEFINICOES.map((item) => (
+                {NAV_CONTA.map((item) => (
                   <a
                     key={item.href}
                     href={item.href}
                     style={{
                       textDecoration: "none",
                       color: "#fff",
-                      padding: "12px 12px",
-                      borderRadius: 14,
+                      padding: "14px 14px",
+                      borderRadius: 16,
                       border: active(item.href)
                         ? "1px solid color-mix(in srgb, var(--accent) 55%, rgba(255,255,255,.14) 45%)"
                         : "1px solid rgba(255,255,255,.10)",
-                      background: active(item.href)
-                        ? "color-mix(in srgb, var(--accent) 12%, #0b0b0b 88%)"
-                        : "#0b0b0b",
+                      background: active(item.href) ? "color-mix(in srgb, var(--accent) 12%, #0b0b0b 88%)" : "#0b0b0b",
                       fontWeight: active(item.href) ? 950 : 850
                     }}
                   >
@@ -412,12 +432,12 @@ export default function AppHeader() {
             </div>
 
             <div style={{ display: "grid", gap: 10 }}>
-              <button onClick={doLogout} className="btn btnAccent" style={{ width: "100%", justifySelf: "stretch" }}>
+              <button className="btn btnAccent" onClick={logout} style={{ width: "100%", padding: "12px 14px" }}>
                 Sair
               </button>
 
-              <div style={{ opacity: 0.7, fontSize: 12, lineHeight: 1.35 }}>
-                {role === "admin" ? "Modo Admin" : "Modo Membro"}
+              <div style={{ opacity: 0.75, fontSize: 12, lineHeight: 1.35 }}>
+                {tenantNome} • {loaded ? (role === "admin" ? "Admin" : "Membro") : "…"}
               </div>
             </div>
           </div>
