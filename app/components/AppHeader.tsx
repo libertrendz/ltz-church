@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
 import { supabaseBrowser } from "../../lib/supabase/client";
 
-const APP_NAME = "LT-CHURCH"; // ✅ anti-regressão: marca oficial (sem Z)
+const APP_NAME = "LT-CHURCH";
 
 type Role = "admin" | "membro";
 type NavItem = { href: string; label: string };
@@ -19,7 +19,7 @@ const NAV_OPERACIONAL_ADMIN: NavItem[] = [
   { href: "/funcoes", label: "Funções" }
 ];
 
-// Nota: rotas atuais (sem criar 404 agora)
+// sem 404 por agora
 const NAV_OPERACIONAL_MEMBRO: NavItem[] = [
   { href: "/", label: "Início" },
   { href: "/agenda", label: "Minha Agenda" },
@@ -51,7 +51,7 @@ function Hamburger({ open }: { open: boolean }) {
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{ marginTop: 8, marginBottom: 6, fontSize: 12, letterSpacing: 1, opacity: 0.65, fontWeight: 950 }}>
+    <div style={{ marginTop: 10, marginBottom: 8, fontSize: 12, letterSpacing: 1, opacity: 0.65, fontWeight: 950 }}>
       {children}
     </div>
   );
@@ -61,35 +61,34 @@ export default function AppHeader() {
   const pathname = usePathname();
   const supabase = useMemo(() => supabaseBrowser(), []);
 
-  const [open, setOpen] = useState(false); // mobile full-screen menu
-  const [accountOpen, setAccountOpen] = useState(false); // desktop dropdown
+  const [openMobile, setOpenMobile] = useState(false);
+  const [openConta, setOpenConta] = useState(false);
 
   const [tenantNome, setTenantNome] = useState<string>("—");
-  const [role, setRole] = useState<Role>("membro"); // default seguro
+  const [role, setRole] = useState<Role>("membro");
   const [loaded, setLoaded] = useState(false);
 
-  // não mostrar header no login
   if (pathname?.startsWith("/login")) return null;
 
   const NAV_OPERACIONAL = role === "admin" ? NAV_OPERACIONAL_ADMIN : NAV_OPERACIONAL_MEMBRO;
 
-  const active = (href: string) => {
+  const isActive = (href: string) => {
     if (href === "/") return pathname === "/";
     return pathname?.startsWith(href);
   };
 
   // fecha menus ao navegar
   useEffect(() => {
-    setOpen(false);
-    setAccountOpen(false);
+    setOpenMobile(false);
+    setOpenConta(false);
   }, [pathname]);
 
   // ESC fecha
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") {
-        setOpen(false);
-        setAccountOpen(false);
+        setOpenMobile(false);
+        setOpenConta(false);
       }
     }
     window.addEventListener("keydown", onKey);
@@ -98,15 +97,15 @@ export default function AppHeader() {
 
   // bloquear scroll quando menu mobile aberto
   useEffect(() => {
-    if (!open) return;
+    if (!openMobile) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = prev;
     };
-  }, [open]);
+  }, [openMobile]);
 
-  // carregar role + tenantNome (cache -> supabase)
+  // carregar role + tenantNome
   useEffect(() => {
     let alive = true;
 
@@ -174,8 +173,8 @@ export default function AppHeader() {
 
   async function logout() {
     try {
-      setOpen(false);
-      setAccountOpen(false);
+      setOpenMobile(false);
+      setOpenConta(false);
 
       try {
         localStorage.removeItem("ltz_role");
@@ -184,7 +183,7 @@ export default function AppHeader() {
 
       await supabase.auth.signOut();
     } finally {
-      // ✅ hard redirect para evitar client-side exception após signOut
+      // hard redirect evita erros client-side pós-logout
       window.location.assign("/login");
     }
   }
@@ -241,8 +240,16 @@ export default function AppHeader() {
 
         <span style={{ flex: 1 }} />
 
-        {/* Desktop: só operacional */}
-        <div className="navDesktop" style={{ display: "none", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
+        {/* Desktop nav */}
+        <div
+          className="navDesktop"
+          style={{
+            display: "none",
+            gap: 14,
+            alignItems: "center",
+            flexWrap: "wrap"
+          }}
+        >
           {NAV_OPERACIONAL.map((item) => (
             <a
               key={item.href}
@@ -250,9 +257,9 @@ export default function AppHeader() {
               className="navlink"
               style={{
                 textDecoration: "none",
-                opacity: active(item.href) ? 1 : 0.9,
-                fontWeight: active(item.href) ? 900 : 800,
-                borderBottom: active(item.href) ? "2px solid var(--accent)" : "2px solid transparent",
+                opacity: isActive(item.href) ? 1 : 0.9,
+                fontWeight: isActive(item.href) ? 900 : 800,
+                borderBottom: isActive(item.href) ? "2px solid var(--accent)" : "2px solid transparent",
                 paddingBottom: 6
               }}
             >
@@ -260,18 +267,17 @@ export default function AppHeader() {
             </a>
           ))}
 
-          {/* Conta dropdown */}
           <div style={{ position: "relative" }}>
             <button
               className="btn"
-              onClick={() => setAccountOpen((v) => !v)}
-              aria-label="Abrir conta"
+              onClick={() => setOpenConta((v) => !v)}
+              aria-label="Conta"
               style={{ padding: "9px 12px", borderRadius: 14 }}
             >
               Conta ▾
             </button>
 
-            {accountOpen ? (
+            {openConta ? (
               <div
                 style={{
                   position: "absolute",
@@ -297,8 +303,10 @@ export default function AppHeader() {
                       textDecoration: "none",
                       color: "#fff",
                       fontWeight: 850,
-                      background: active(x.href) ? "color-mix(in srgb, var(--accent) 12%, #0b0b0b 88%)" : "transparent",
-                      border: active(x.href) ? "1px solid rgba(255,255,255,.12)" : "1px solid transparent"
+                      background: isActive(x.href)
+                        ? "color-mix(in srgb, var(--accent) 12%, #0b0b0b 88%)"
+                        : "transparent",
+                      border: isActive(x.href) ? "1px solid rgba(255,255,255,.12)" : "1px solid transparent"
                     }}
                   >
                     {x.label}
@@ -318,8 +326,8 @@ export default function AppHeader() {
         {/* Mobile hamburger */}
         <button
           className="navMobileBtn"
-          onClick={() => setOpen((v) => !v)}
-          aria-label={open ? "Fechar menu" : "Abrir menu"}
+          onClick={() => setOpenMobile((v) => !v)}
+          aria-label={openMobile ? "Fechar menu" : "Abrir menu"}
           style={{
             display: "inline-flex",
             alignItems: "center",
@@ -333,7 +341,7 @@ export default function AppHeader() {
             cursor: "pointer"
           }}
         >
-          <Hamburger open={open} />
+          <Hamburger open={openMobile} />
         </button>
       </nav>
 
@@ -349,39 +357,53 @@ export default function AppHeader() {
         }}
       />
 
-      {/* MOBILE MENU — FULL SCREEN (não se vê a home atrás) */}
-      {open ? (
-        <div role="dialog" aria-modal="true" style={{ position: "fixed", inset: 0, zIndex: 90 }}>
-          {/* backdrop forte */}
+      {/* MOBILE MENU — FULL SCREEN + FUNDO SÓLIDO + LISTA NÃO COLAPSA */}
+      {openMobile ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 90,
+            background: "#050505" // ✅ cobre a app inteira (home não aparece)
+          }}
+        >
+          {/* topo */}
           <div
-            onClick={() => setOpen(false)}
             style={{
-              position: "absolute",
-              inset: 0,
-              background: "rgba(0,0,0,.86)"
-            }}
-          />
-
-          {/* painel full-screen sólido */}
-          <div
-            style={{
-              position: "absolute",
-              inset: 0,
-              background: "#050505",
               padding: 14,
-              display: "grid",
-              gridTemplateRows: "auto 1fr auto",
-              gap: 12
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 12,
+              borderBottom: "1px solid rgba(255,255,255,.08)"
             }}
           >
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-              <div style={{ fontWeight: 950, fontSize: 18 }}>Menu</div>
-              <button onClick={() => setOpen(false)} className="btn" style={{ padding: "8px 10px", borderRadius: 12 }}>
-                Fechar
-              </button>
-            </div>
+            <div style={{ fontWeight: 950, fontSize: 18 }}>Menu</div>
+            <button onClick={() => setOpenMobile(false)} className="btn" style={{ padding: "8px 10px", borderRadius: 12 }}>
+              Fechar
+            </button>
+          </div>
 
-            <div style={{ overflow: "auto", paddingBottom: 10 }}>
+          {/* corpo (flex + minHeight 0 para não colapsar; scroll no meio) */}
+          <div
+            style={{
+              height: "calc(100vh - 64px)",
+              display: "flex",
+              flexDirection: "column",
+              minHeight: 0
+            }}
+          >
+            {/* lista */}
+            <div
+              style={{
+                flex: 1,
+                minHeight: 0,
+                overflow: "auto",
+                padding: 14
+              }}
+            >
               <SectionTitle>OPERACIONAL</SectionTitle>
               <div style={{ display: "grid", gap: 10 }}>
                 {NAV_OPERACIONAL.map((item) => (
@@ -393,11 +415,13 @@ export default function AppHeader() {
                       color: "#fff",
                       padding: "14px 14px",
                       borderRadius: 16,
-                      border: active(item.href)
+                      border: isActive(item.href)
                         ? "1px solid color-mix(in srgb, var(--accent) 55%, rgba(255,255,255,.14) 45%)"
                         : "1px solid rgba(255,255,255,.10)",
-                      background: active(item.href) ? "color-mix(in srgb, var(--accent) 12%, #0b0b0b 88%)" : "#0b0b0b",
-                      fontWeight: active(item.href) ? 950 : 850
+                      background: isActive(item.href)
+                        ? "color-mix(in srgb, var(--accent) 12%, #0b0b0b 88%)"
+                        : "#101010",
+                      fontWeight: isActive(item.href) ? 950 : 850
                     }}
                   >
                     {item.label}
@@ -418,11 +442,13 @@ export default function AppHeader() {
                       color: "#fff",
                       padding: "14px 14px",
                       borderRadius: 16,
-                      border: active(item.href)
+                      border: isActive(item.href)
                         ? "1px solid color-mix(in srgb, var(--accent) 55%, rgba(255,255,255,.14) 45%)"
                         : "1px solid rgba(255,255,255,.10)",
-                      background: active(item.href) ? "color-mix(in srgb, var(--accent) 12%, #0b0b0b 88%)" : "#0b0b0b",
-                      fontWeight: active(item.href) ? 950 : 850
+                      background: isActive(item.href)
+                        ? "color-mix(in srgb, var(--accent) 12%, #0b0b0b 88%)"
+                        : "#101010",
+                      fontWeight: isActive(item.href) ? 950 : 850
                     }}
                   >
                     {item.label}
@@ -431,12 +457,18 @@ export default function AppHeader() {
               </div>
             </div>
 
-            <div style={{ display: "grid", gap: 10 }}>
-              <button className="btn btnAccent" onClick={logout} style={{ width: "100%", padding: "12px 14px" }}>
+            {/* rodapé fixo (Sair) */}
+            <div
+              style={{
+                padding: 14,
+                borderTop: "1px solid rgba(255,255,255,.08)"
+              }}
+            >
+              <button onClick={logout} className="btn btnAccent" style={{ width: "100%", borderRadius: 14, padding: "12px 14px" }}>
                 Sair
               </button>
 
-              <div style={{ opacity: 0.75, fontSize: 12, lineHeight: 1.35 }}>
+              <div style={{ marginTop: 10, opacity: 0.7, fontSize: 12, lineHeight: 1.35 }}>
                 {tenantNome} • {loaded ? (role === "admin" ? "Admin" : "Membro") : "…"}
               </div>
             </div>
