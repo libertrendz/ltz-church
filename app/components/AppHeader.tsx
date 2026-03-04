@@ -70,55 +70,56 @@ export default function AppHeader() {
     };
   }, [open]);
 
-  // carregar nome da igreja (tenant) com cache local
-  // + aplicar accent por UTILIZADOR (não global no browser)
+  // ✅ fonte de verdade do accent = BD (igrejas.cor_primaria)
+  // e apagamos quaisquer restos do legado localStorage
   useEffect(() => {
     let active = true;
 
     (async () => {
       try {
-        const cached = localStorage.getItem("ltz_tenant_nome");
-        if (cached && active) setTenantNome(cached);
+        // limpa legado (evita cores diferentes por device/perfil)
+        try {
+          localStorage.removeItem("ltz_accent");
+        } catch {}
+
+        // cache só do nome (não da cor)
+        const cachedNome = localStorage.getItem("ltz_tenant_nome");
+        if (cachedNome && active) setTenantNome(cachedNome);
 
         const { data: sess } = await supabase.auth.getSession();
         const userId = sess.session?.user?.id;
+
         if (!userId) {
-          if (active) setTenantNome("—");
+          if (!active) return;
+          setTenantNome("—");
+          // se não há sessão, não mexe no accent (fica default do layout)
           return;
         }
 
         const uRes = await supabase.from("usuarios").select("igreja_id").eq("id", userId).single();
-        if (uRes.error) return;
+        if (uRes.error) throw uRes.error;
 
         const igrejaId = (uRes.data?.igreja_id as string | null) || null;
-        if (!igrejaId) return;
+        if (!igrejaId) throw new Error("Sem igreja_id no utilizador.");
 
-        // ✅ Accent por perfil (igreja + user)
-        const perKey = `ltz_accent:${igrejaId}:${userId}`;
-
-        // migração suave do legacy (ltz_accent global)
-        const legacy = localStorage.getItem("ltz_accent");
-        const per = localStorage.getItem(perKey);
-
-        const chosen = per ?? legacy ?? null;
-
-        if (chosen) {
-          document.documentElement.style.setProperty("--accent", chosen);
-          // fixa na key por perfil
-          if (!per) localStorage.setItem(perKey, chosen);
-        }
-
-        const iRes = await supabase.from("igrejas").select("nome").eq("id", igrejaId).single();
-        if (iRes.error) return;
+        const iRes = await supabase.from("igrejas").select("nome, cor_primaria").eq("id", igrejaId).single();
+        if (iRes.error) throw iRes.error;
 
         const nome = (iRes.data?.nome as string | null) || null;
+        const cor = (iRes.data?.cor_primaria as string | null) || null;
+
         if (!active) return;
 
         const finalNome = nome || "—";
         setTenantNome(finalNome);
         if (nome) localStorage.setItem("ltz_tenant_nome", nome);
+
+        // aplica accent do tenant (ou mantém default se NULL)
+        if (cor) {
+          document.documentElement.style.setProperty("--accent", cor);
+        }
       } catch {
-        // silencioso
+        // silencioso: header não pode rebentar UX
       }
     })();
 
@@ -268,7 +269,7 @@ export default function AppHeader() {
             position: "fixed",
             inset: 0,
             zIndex: 9999,
-            background: "#050505" // ← opaco: elimina sobreposição com o fundo
+            background: "#050505"
           }}
         >
           {/* topo */}
@@ -283,11 +284,7 @@ export default function AppHeader() {
             }}
           >
             <div style={{ fontWeight: 950, fontSize: 16 }}>Menu</div>
-            <button
-              onClick={() => setOpen(false)}
-              className="btn"
-              style={{ padding: "8px 10px", borderRadius: 12 }}
-            >
+            <button onClick={() => setOpen(false)} className="btn" style={{ padding: "8px 10px", borderRadius: 12 }}>
               Fechar
             </button>
           </div>
