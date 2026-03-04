@@ -5,11 +5,9 @@ import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
 import { supabaseBrowser } from "../../lib/supabase/client";
 
-const APP_NAME = "LT-CHURCH";
-
 type NavItem = { href: string; label: string };
 
-const NAV_ADMIN: NavItem[] = [
+const NAV: NavItem[] = [
   { href: "/", label: "Início" },
   { href: "/cultos", label: "Cultos & Escalas" },
   { href: "/agenda", label: "Agenda" },
@@ -17,14 +15,6 @@ const NAV_ADMIN: NavItem[] = [
   { href: "/departamentos", label: "Departamentos" },
   { href: "/funcoes", label: "Funções" },
   { href: "/definicoes/aparencia", label: "Aparência" },
-  { href: "/me", label: "Perfil" }
-];
-
-// Nota: para não criar 404 agora, “Membro” aponta para rotas que já existem.
-const NAV_MEMBRO: NavItem[] = [
-  { href: "/", label: "Início" },
-  { href: "/agenda", label: "Minha Agenda" },
-  { href: "/cultos", label: "Minhas Escalas" },
   { href: "/me", label: "Perfil" }
 ];
 
@@ -49,12 +39,9 @@ function Hamburger({ open }: { open: boolean }) {
 export default function AppHeader() {
   const pathname = usePathname();
   const supabase = useMemo(() => supabaseBrowser(), []);
-  const [open, setOpen] = useState(false);
 
-  // session-aware
+  const [open, setOpen] = useState(false);
   const [tenantNome, setTenantNome] = useState<string>("—");
-  const [role, setRole] = useState<"admin" | "membro">("membro"); // seguro por defeito
-  const [loaded, setLoaded] = useState(false);
 
   // não mostrar header no login
   if (pathname?.startsWith("/login")) return null;
@@ -73,7 +60,7 @@ export default function AppHeader() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // bloquear scroll quando drawer aberto
+  // bloquear scroll quando menu aberto
   useEffect(() => {
     if (!open) return;
     const prev = document.body.style.overflow;
@@ -83,80 +70,64 @@ export default function AppHeader() {
     };
   }, [open]);
 
-  // carregar role + tenantNome (usuarios -> igrejas)
+  // carregar nome da igreja (tenant) com cache local
+  // + aplicar accent por UTILIZADOR (não global no browser)
   useEffect(() => {
-    let alive = true;
+    let active = true;
 
     (async () => {
       try {
-        // cache “rápido”
-        const cachedNome = localStorage.getItem("ltz_tenant_nome");
-        const cachedRole = localStorage.getItem("ltz_role");
-
-        if (cachedNome && alive) setTenantNome(cachedNome);
-        if ((cachedRole === "admin" || cachedRole === "membro") && alive) setRole(cachedRole);
+        const cached = localStorage.getItem("ltz_tenant_nome");
+        if (cached && active) setTenantNome(cached);
 
         const { data: sess } = await supabase.auth.getSession();
         const userId = sess.session?.user?.id;
-
         if (!userId) {
-          if (!alive) return;
-          setRole("membro");
-          setTenantNome("—");
-          setLoaded(true);
+          if (active) setTenantNome("—");
           return;
         }
 
-        const uRes = await supabase
-          .from("usuarios")
-          .select("role, igreja_id")
-          .eq("id", userId)
-          .maybeSingle();
+        const uRes = await supabase.from("usuarios").select("igreja_id").eq("id", userId).single();
+        if (uRes.error) return;
 
-        if (uRes.error || !uRes.data) {
-          if (!alive) return;
-          setLoaded(true);
-          return;
+        const igrejaId = (uRes.data?.igreja_id as string | null) || null;
+        if (!igrejaId) return;
+
+        // ✅ Accent por perfil (igreja + user)
+        const perKey = `ltz_accent:${igrejaId}:${userId}`;
+
+        // migração suave do legacy (ltz_accent global)
+        const legacy = localStorage.getItem("ltz_accent");
+        const per = localStorage.getItem(perKey);
+
+        const chosen = per ?? legacy ?? null;
+
+        if (chosen) {
+          document.documentElement.style.setProperty("--accent", chosen);
+          // fixa na key por perfil
+          if (!per) localStorage.setItem(perKey, chosen);
         }
 
-        const r = (uRes.data.role as "admin" | "membro" | null) ?? "membro";
-        const igrejaId = (uRes.data.igreja_id as string | null) ?? null;
+        const iRes = await supabase.from("igrejas").select("nome").eq("id", igrejaId).single();
+        if (iRes.error) return;
 
-        if (!alive) return;
+        const nome = (iRes.data?.nome as string | null) || null;
+        if (!active) return;
 
-        setRole(r);
-        localStorage.setItem("ltz_role", r);
-
-        if (igrejaId) {
-          const iRes = await supabase.from("igrejas").select("nome").eq("id", igrejaId).maybeSingle();
-          const nome = (iRes.data?.nome as string | null) ?? null;
-          if (!alive) return;
-
-          if (nome) {
-            setTenantNome(nome);
-            localStorage.setItem("ltz_tenant_nome", nome);
-          } else {
-            setTenantNome("—");
-          }
-        } else {
-          setTenantNome("—");
-        }
-
-        setLoaded(true);
+        const finalNome = nome || "—";
+        setTenantNome(finalNome);
+        if (nome) localStorage.setItem("ltz_tenant_nome", nome);
       } catch {
-        if (!alive) return;
-        setLoaded(true);
+        // silencioso
       }
     })();
 
     return () => {
-      alive = false;
+      active = false;
     };
   }, [supabase]);
 
-  const NAV = role === "admin" ? NAV_ADMIN : NAV_MEMBRO;
-
-  const active = (href: string) => {
+  const isActive = (href: string) => {
     if (href === "/") return pathname === "/";
     return pathname?.startsWith(href);
   };
@@ -164,10 +135,11 @@ export default function AppHeader() {
   async function logout() {
     try {
       await supabase.auth.signOut();
-    } finally {
-      // hard redirect evita “client-side exception”
-      window.location.assign("/login");
+    } catch {
+      // ignora
     }
+    // hard redirect evita crash pós-logout
+    window.location.href = "/login";
   }
 
   return (
@@ -204,28 +176,17 @@ export default function AppHeader() {
         >
           <img
             src="/images/logo_oficial_church.png"
-            alt={APP_NAME}
+            alt="LT-CHURCH"
             width={64}
             height={64}
             style={{ borderRadius: 14, display: "block" }}
           />
           <div style={{ minWidth: 0 }}>
             <div style={{ color: "#fff", fontWeight: 950, letterSpacing: 0.2, lineHeight: 1.1 }}>
-              {APP_NAME}
+              LT-CHURCH
             </div>
-            <div
-              style={{
-                color: "rgba(255,255,255,.80)",
-                fontWeight: 950,
-                fontSize: 15,
-                letterSpacing: 0.4,
-                lineHeight: 1.2
-              }}
-            >
+            <div style={{ color: "rgba(255,255,255,.75)", fontWeight: 900, fontSize: 13, lineHeight: 1.2 }}>
               {tenantNome}
-              <span style={{ opacity: 0.55, fontWeight: 800, marginLeft: 8 }}>
-                {loaded ? (role === "admin" ? "Admin" : "Membro") : "…"}
-              </span>
             </div>
           </div>
         </a>
@@ -242,16 +203,16 @@ export default function AppHeader() {
             flexWrap: "wrap"
           }}
         >
-          {NAV.filter((x) => !["/me", "/definicoes/aparencia"].includes(x.href)).map((item) => (
+          {NAV.map((item) => (
             <a
               key={item.href}
               href={item.href}
               className="navlink"
               style={{
                 textDecoration: "none",
-                opacity: active(item.href) ? 1 : 0.9,
-                fontWeight: active(item.href) ? 900 : 800,
-                borderBottom: active(item.href) ? "2px solid var(--accent)" : "2px solid transparent",
+                opacity: isActive(item.href) ? 1 : 0.9,
+                fontWeight: isActive(item.href) ? 900 : 800,
+                borderBottom: isActive(item.href) ? "2px solid var(--accent)" : "2px solid transparent",
                 paddingBottom: 6
               }}
             >
@@ -259,16 +220,9 @@ export default function AppHeader() {
             </a>
           ))}
 
-          {/* No desktop: Aparência só para admin */}
-          {role === "admin" ? (
-            <a className="navlink" href="/definicoes/aparencia" style={{ textDecoration: "none", opacity: 0.9 }}>
-              Aparência
-            </a>
-          ) : null}
-
-          <a className="navlink" href="/me" style={{ textDecoration: "none", opacity: 0.9 }}>
-            Perfil
-          </a>
+          <button onClick={logout} className="btn" style={{ padding: "8px 10px", borderRadius: 12 }}>
+            Sair
+          </button>
         </div>
 
         {/* Mobile hamburger */}
@@ -293,7 +247,7 @@ export default function AppHeader() {
         </button>
       </nav>
 
-      {/* CSS simples para desktop vs mobile */}
+      {/* CSS desktop vs mobile */}
       <style
         dangerouslySetInnerHTML={{
           __html: `
@@ -305,7 +259,7 @@ export default function AppHeader() {
         }}
       />
 
-      {/* MOBILE DRAWER — corrigido: overlay opaco + painel sólido + lista não colapsa */}
+      {/* ✅ Drawer (mobile) OPACO, sem transparências */}
       {open ? (
         <div
           role="dialog"
@@ -313,83 +267,79 @@ export default function AppHeader() {
           style={{
             position: "fixed",
             inset: 0,
-            zIndex: 60
+            zIndex: 9999,
+            background: "#050505" // ← opaco: elimina sobreposição com o fundo
           }}
         >
-          {/* ✅ overlay opaco para NÃO ver a home atrás */}
-          <div
-            onClick={() => setOpen(false)}
-            style={{
-              position: "absolute",
-              inset: 0,
-              background: "rgba(0,0,0,.90)" // <- aqui é o “protetor”
-            }}
-          />
-
-          {/* ✅ painel sólido (não transparente) */}
+          {/* topo */}
           <div
             style={{
-              position: "absolute",
-              top: 0,
-              right: 0,
-              height: "100%",
-              width: "86%",
-              maxWidth: 360,
-              background: "#050505",
-              borderLeft: "1px solid rgba(255,255,255,.10)",
-              boxShadow: "0 18px 60px rgba(0,0,0,.6)",
-              padding: 14,
               display: "flex",
-              flexDirection: "column",
-              gap: 12
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 12,
+              padding: 14,
+              borderBottom: "1px solid rgba(255,255,255,.08)"
             }}
           >
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-              <div style={{ fontWeight: 950, fontSize: 16 }}>Menu</div>
-              <button
-                onClick={() => setOpen(false)}
-                className="btn"
-                style={{ padding: "8px 10px", borderRadius: 12 }}
-              >
-                Fechar
-              </button>
-            </div>
-
-            {/* ✅ scroll aqui para nunca “sumir” itens */}
-            <div style={{ display: "grid", gap: 10, overflow: "auto", minHeight: 0, flex: 1 }}>
-              {NAV.map((item) => (
-                <a
-                  key={item.href}
-                  href={item.href}
-                  style={{
-                    textDecoration: "none",
-                    color: "#fff",
-                    padding: "12px 12px",
-                    borderRadius: 14,
-                    border: active(item.href)
-                      ? "1px solid color-mix(in srgb, var(--accent) 55%, rgba(255,255,255,.14) 45%)"
-                      : "1px solid rgba(255,255,255,.10)",
-                    background: active(item.href)
-                      ? "color-mix(in srgb, var(--accent) 12%, #0b0b0b 88%)"
-                      : "#0b0b0b",
-                    fontWeight: active(item.href) ? 950 : 850
-                  }}
-                >
-                  {item.label}
-                </a>
-              ))}
-            </div>
-
+            <div style={{ fontWeight: 950, fontSize: 16 }}>Menu</div>
             <button
-              onClick={logout}
-              className="btn btnAccent"
-              style={{ width: "100%", borderRadius: 14, padding: "12px 14px" }}
+              onClick={() => setOpen(false)}
+              className="btn"
+              style={{ padding: "8px 10px", borderRadius: 12 }}
             >
-              Sair
+              Fechar
             </button>
+          </div>
 
-            <div style={{ opacity: 0.8, fontSize: 12, lineHeight: 1.35 }}>
-              {role === "admin" ? "Modo Admin" : "Modo Membro"}
+          {/* conteúdo */}
+          <div style={{ padding: 14 }}>
+            <div
+              style={{
+                border: "1px solid rgba(255,255,255,.10)",
+                borderRadius: 18,
+                background: "#0b0b0b",
+                boxShadow: "0 18px 60px rgba(0,0,0,.55)",
+                padding: 12
+              }}
+            >
+              <div style={{ display: "grid", gap: 10 }}>
+                {NAV.map((item) => (
+                  <a
+                    key={item.href}
+                    href={item.href}
+                    style={{
+                      textDecoration: "none",
+                      color: "#fff",
+                      padding: "14px 12px",
+                      borderRadius: 14,
+                      border: isActive(item.href)
+                        ? "1px solid color-mix(in srgb, var(--accent) 55%, rgba(255,255,255,.14) 45%)"
+                        : "1px solid rgba(255,255,255,.10)",
+                      background: isActive(item.href)
+                        ? "color-mix(in srgb, var(--accent) 12%, #0b0b0b 88%)"
+                        : "#101010",
+                      fontWeight: isActive(item.href) ? 950 : 850
+                    }}
+                  >
+                    {item.label}
+                  </a>
+                ))}
+              </div>
+
+              <div style={{ height: 12 }} />
+
+              <button
+                onClick={logout}
+                className="btn btnAccent"
+                style={{ width: "100%", borderRadius: 14, padding: "12px 14px" }}
+              >
+                Sair
+              </button>
+
+              <div style={{ marginTop: 10, opacity: 0.7, fontSize: 12, lineHeight: 1.35 }}>
+                Dark fixo + cor de contraste (accent).
+              </div>
             </div>
           </div>
         </div>
