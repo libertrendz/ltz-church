@@ -1,4 +1,4 @@
-# LTZ-CHURCH — MASTER SPEC v0.1
+# LT-CHURCH — MASTER SPEC v0.1
 
 Idioma: pt-PT  
 Stack alvo: Next.js + Supabase + Vercel
